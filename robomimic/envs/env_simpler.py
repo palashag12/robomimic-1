@@ -9,6 +9,8 @@ import argparse
 import numpy as np
 from copy import deepcopy
 
+import isaacgym
+
 import simpler_app_utils
 from simpler_app_utils.task_env import SimPLERTask
 
@@ -68,7 +70,7 @@ class EnvSimPLER(EB.EnvBase):
         # prepare usd file
         if usd_file_str is None:
             # read usd file string from usd file - it will be saved as metadata
-            f = open(args.usd, "r")
+            f = open(namespace_args.usd, "r")
             usd_file_str = f.read()
             f.close()
         else:
@@ -79,13 +81,18 @@ class EnvSimPLER(EB.EnvBase):
             f = open(tmp_usd_file, "w")
             f.write(usd_file_str)
             f.close()
-            args.usd = tmp_usd_file
+            namespace_args.usd = tmp_usd_file
+
+        # there is a chance that this was saved as an int during serialization, so convert back
+        namespace_args.physics_engine = isaacgym.gymapi.SimType(namespace_args.physics_engine)
 
         ### TODO: add in desired args here based on passed settings (rendering, camera size, etc) ###
 
         # cache the env kwargs and namespace object as a dict, to save as metadata
         self._init_kwargs = deepcopy(kwargs)
-        self._namespace_args_dict = vars(deepcopy(namespace_args))
+        namespace_args_copy = deepcopy(namespace_args)
+        namespace_args_copy.physics_engine = int(namespace_args_copy.physics_engine) # need int for json serialization
+        self._namespace_args_dict = vars(namespace_args_copy)
         self._usd_file_str = usd_file_str
 
         self.env = SimPLERTask(args=namespace_args, **kwargs)
@@ -182,7 +189,7 @@ class EnvSimPLER(EB.EnvBase):
         ### TODO: filter out whatever we want for learning ###
         for k in di:
             if k not in ret:
-                ret[k] = np.array(di)
+                ret[k] = np.array(di[k])
         return ret
 
     def get_state(self):
@@ -266,7 +273,7 @@ class EnvSimPLER(EB.EnvBase):
         env_kwargs = deepcopy(self._init_kwargs)
         env_kwargs["namespace_args"] = deepcopy(self._namespace_args_dict)
         env_kwargs["usd_file_str"] = self._usd_file_str
-        return dict(env_name=self.name, type=self.type, env_kwargs=deepcopy(self._init_kwargs))
+        return dict(env_name=self.name, type=self.type, env_kwargs=env_kwargs)
 
     @classmethod
     def create_for_data_processing(
