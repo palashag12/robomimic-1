@@ -62,6 +62,9 @@ import argparse
 import imageio
 import numpy as np
 
+# DIRTY HACK: need isaacgym import before torch...
+import isaacgym
+
 import robomimic
 import robomimic.utils.obs_utils as ObsUtils
 import robomimic.utils.env_utils as EnvUtils
@@ -74,6 +77,7 @@ DEFAULT_CAMERAS = {
     EnvType.ROBOSUITE_TYPE: ["agentview"],
     EnvType.IG_MOMART_TYPE: ["rgb"],
     EnvType.GYM_TYPE: ValueError("No camera names supported for gym type env!"),
+    EnvType.SIMPLER_TYPE: ["test"],
 }
 
 
