@@ -200,9 +200,8 @@ class EnvSimPLER(EB.EnvBase):
         # TODO: consider saving usd scene string here, especially if it is liable to change from episode to episode
 
         # get state of all objects
-        world_state_dict = self.env.get_state()
-        # world_state_dict = extract_numerics_from_world_state(world_state)
-        return dict(states=world_state_dict)
+        state_dict = self.env.get_state()
+        return dict(states=state_dict)
 
     def get_reward(self):
         """
