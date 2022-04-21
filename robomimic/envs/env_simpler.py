@@ -86,6 +86,11 @@ class EnvSimPLER(EB.EnvBase):
         # there is a chance that this was saved as an int during serialization, so convert back
         namespace_args.physics_engine = isaacgym.gymapi.SimType(namespace_args.physics_engine)
 
+        # set rendering settings
+        assert not (render and render_offscreen)
+        namespace_args.headless = (not render)
+        self._headless = namespace_args.headless
+
         # update kwargs based on passed arguments
         kwargs = deepcopy(kwargs)
         update_kwargs = dict(
@@ -154,7 +159,7 @@ class EnvSimPLER(EB.EnvBase):
             return self.get_observation()
         return None
 
-    def render(self, mode="human", height=None, width=None, camera_name="agentview"):
+    def render(self, mode="human", height=None, width=None, camera_name="default"):
         """
         Render from simulation to either an on-screen window or off-screen to RGB array.
 
@@ -165,11 +170,12 @@ class EnvSimPLER(EB.EnvBase):
             camera_name (str): camera name to use for rendering
         """
 
-        ### TODO: support on-screen viewer ###
         ### TODO: support setting image size in this function ###
-
-        if mode == "rgb_array":
-            return self.env.render()
+        if mode == "human":
+            assert not self._headless
+            self.env.update_gui()
+        elif mode == "rgb_array":
+            return self.env.render(name=camera_name, height=height, width=width)
         else:
             raise NotImplementedError("mode={} is not implemented".format(mode))
 
