@@ -86,7 +86,12 @@ class EnvSimPLER(EB.EnvBase):
         # there is a chance that this was saved as an int during serialization, so convert back
         namespace_args.physics_engine = isaacgym.gymapi.SimType(namespace_args.physics_engine)
 
-        ### TODO: add in desired args here based on passed settings (rendering, camera size, etc) ###
+        # set rendering settings
+        assert not (render and render_offscreen)
+        args.headless = (not render)
+        self._headless = args.headless
+
+        ### TODO: add in camera settings here ###
 
         # cache the env kwargs and namespace object as a dict, to save as metadata
         self._init_kwargs = deepcopy(kwargs)
@@ -149,7 +154,7 @@ class EnvSimPLER(EB.EnvBase):
             return self.get_observation()
         return None
 
-    def render(self, mode="human", height=None, width=None, camera_name="agentview"):
+    def render(self, mode="human", height=None, width=None, camera_name="default"):
         """
         Render from simulation to either an on-screen window or off-screen to RGB array.
 
@@ -160,11 +165,12 @@ class EnvSimPLER(EB.EnvBase):
             camera_name (str): camera name to use for rendering
         """
 
-        ### TODO: support on-screen viewer ###
         ### TODO: support setting image size in this function ###
-
-        if mode == "rgb_array":
-            return self.env.render()
+        if mode == "human":
+            assert not self._headless
+            self.env.update_gui()
+        elif mode == "rgb_array":
+            return self.env.render(name=camera_name, height=height, width=width)
         else:
             raise NotImplementedError("mode={} is not implemented".format(mode))
 
@@ -299,7 +305,6 @@ class EnvSimPLER(EB.EnvBase):
         assert not reward_shaping, "TODO: no support for reward shaping flag yet"
 
         has_camera = (len(camera_names) > 0)
-        assert not has_camera, "TODO: support different cameras"
 
         # also initialize obs utils so it knows which modalities are image modalities
         image_modalities = []
