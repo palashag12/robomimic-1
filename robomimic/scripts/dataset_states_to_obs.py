@@ -64,14 +64,14 @@ def extract_trajectory(
     Args:
         env (instance of EnvBase): environment
         initial_state (dict): initial simulation state to load
-        states (np.array): array of simulation states to load to extract information
+        states (list of dict or np.array): array of simulation states to load
         actions (np.array): array of actions
         done_mode (int): how to write done signal. If 0, done is 1 whenever s' is a 
             success state. If 1, done is 1 at the end of each trajectory. 
             If 2, do both.
     """
     assert isinstance(env, EnvBase)
-    assert states.shape[0] == actions.shape[0]
+    assert len(states) == actions.shape[0]
 
     # load the initial state
     env.reset()
@@ -83,10 +83,10 @@ def extract_trajectory(
         rewards=[], 
         dones=[], 
         actions=np.array(actions), 
-        states=np.array(states), 
+        states=deepcopy(states), 
         initial_state_dict=initial_state,
     )
-    traj_len = states.shape[0]
+    traj_len = len(states)
     # iteration variable @t is over "next obs" indices
     for t in range(1, traj_len + 1):
 
@@ -125,6 +125,8 @@ def extract_trajectory(
     # convert list of dict to dict of list for obs dictionaries (for convenient writes to hdf5 dataset)
     traj["obs"] = TensorUtils.list_of_flat_dict_to_dict_of_list(traj["obs"])
     traj["next_obs"] = TensorUtils.list_of_flat_dict_to_dict_of_list(traj["next_obs"])
+    if isinstance(traj["states"][0], dict):
+        traj["states"] = TensorUtils.list_of_flat_dict_to_dict_of_list(traj["states"])
 
     # list to numpy array
     for k in traj:
@@ -154,8 +156,9 @@ def dataset_states_to_obs(args):
     print(json.dumps(env.serialize(), indent=4))
     print("")
 
-    # some operations for playback are robosuite-specific, so determine if this environment is a robosuite env
+    # some operations for playback are env-type-specific
     is_robosuite_env = EnvUtils.is_robosuite_env(env_meta)
+    is_simpler_env = EnvUtils.is_simpler_env(env_meta)
 
     # list of all demonstration episodes (sorted in increasing number order)
     f = h5py.File(args.dataset, "r")
@@ -178,8 +181,18 @@ def dataset_states_to_obs(args):
     for ind in range(len(demos)):
         ep = demos[ind]
 
-        # prepare initial state to reload from
-        states = f["data/{}/states".format(ep)][()]
+        # prepare states to reload from
+        if is_simpler_env:
+            # states are dictionaries - make list of dictionaries
+            traj_len = f["data/{}/actions".format(ep)].shape[0]
+            states = []
+            state_grp = f["data/{}/states".format(ep)]
+            for i in range(traj_len):
+                states.append(
+                    { k : np.array(state_grp[k][i]) for k in state_grp }
+                )
+        else:
+            states = f["data/{}/states".format(ep)][()]
         initial_state = dict(states=states[0])
         if is_robosuite_env:
             initial_state["model"] = f["data/{}".format(ep)].attrs["model_file"]
@@ -206,7 +219,11 @@ def dataset_states_to_obs(args):
         #            consistent as well
         ep_data_grp = data_grp.create_group(ep)
         ep_data_grp.create_dataset("actions", data=np.array(traj["actions"]))
-        ep_data_grp.create_dataset("states", data=np.array(traj["states"]))
+        if is_simpler_env:
+            for k in traj["states"]:
+                ep_data_grp.create_dataset("states/{}".format(k), data=np.array(traj["states"][k]))
+        else:
+            ep_data_grp.create_dataset("states", data=np.array(traj["states"]))
         ep_data_grp.create_dataset("rewards", data=np.array(traj["rewards"]))
         ep_data_grp.create_dataset("dones", data=np.array(traj["dones"]))
         for k in traj["obs"]:

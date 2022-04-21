@@ -1,6 +1,13 @@
 __version__ = "0.2.0"
 
 
+try:
+    # DIRTY HACK: need isaacgym import before torch...
+    import isaacgym
+except:
+    pass
+
+
 # stores released dataset links and rollout horizons in global dictionary.
 # Structure is given below for each type of dataset:
 

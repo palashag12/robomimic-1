@@ -193,7 +193,7 @@ class EnvSimPLER(EB.EnvBase):
         for k in di:
             # handle rgb image observations
             if (k in ObsUtils.OBS_KEYS_TO_MODALITIES) and ObsUtils.key_is_obs_modality(key=k, obs_modality="rgb"):
-                ret[k] = di[k][::-1]
+                ret[k] = di[k]
                 if self.postprocess_visual_obs:
                     ret[k] = ObsUtils.process_obs(obs=ret[k], obs_key=k)
 

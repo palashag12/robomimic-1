@@ -62,9 +62,6 @@ import argparse
 import imageio
 import numpy as np
 
-# DIRTY HACK: need isaacgym import before torch...
-import isaacgym
-
 import robomimic
 import robomimic.utils.obs_utils as ObsUtils
 import robomimic.utils.env_utils as EnvUtils
@@ -270,7 +267,7 @@ def playback_dataset(args):
             )
             continue
 
-        # prepare initial state to reload from
+        # prepare states to reload from
         if is_simpler_env:
             # states are dictionaries - make list of dictionaries
             traj_len = f["data/{}/actions".format(ep)].shape[0]
