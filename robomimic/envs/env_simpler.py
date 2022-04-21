@@ -86,7 +86,12 @@ class EnvSimPLER(EB.EnvBase):
         # there is a chance that this was saved as an int during serialization, so convert back
         namespace_args.physics_engine = isaacgym.gymapi.SimType(namespace_args.physics_engine)
 
-        ### TODO: add in desired args here based on passed settings (rendering, camera size, etc) ###
+        # update kwargs based on passed arguments
+        kwargs = deepcopy(kwargs)
+        update_kwargs = dict(
+            use_camera_obs=use_image_obs,
+        )
+        kwargs.update(update_kwargs)
 
         # cache the env kwargs and namespace object as a dict, to save as metadata
         self._init_kwargs = deepcopy(kwargs)
@@ -298,13 +303,17 @@ class EnvSimPLER(EB.EnvBase):
         """
         assert not reward_shaping, "TODO: no support for reward shaping flag yet"
 
+        # add in appropriate camera kwargs
         has_camera = (len(camera_names) > 0)
-        assert not has_camera, "TODO: support different cameras"
+        new_kwargs = dict()
+        if has_camera:
+            new_kwargs["camera_names"] = list(camera_names)
+            new_kwargs["camera_heights"] = camera_height
+            new_kwargs["camera_widths"] = camera_width
+        kwargs.update(new_kwargs)
 
         # also initialize obs utils so it knows which modalities are image modalities
-        image_modalities = []
-        # image_modalities = list(camera_names)
-        # image_modalities = ["{}_image".format(cn) for cn in camera_names]
+        image_modalities = ["{}_image".format(cn) for cn in camera_names]
         obs_modality_specs = {
             "obs": {
                 "low_dim": [], # technically unused, so we don't have to specify all of them
