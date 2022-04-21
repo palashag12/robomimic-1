@@ -100,7 +100,7 @@ def playback_trajectory_with_env(
     Args:
         env (instance of EnvBase): environment
         initial_state (dict): initial simulation state to load
-        states (np.array): array of simulation states to load
+        states (list of dict or np.array): array of simulation states to load
         actions (np.array): if provided, play actions back open-loop instead of using @states
         render (bool): if True, render on-screen
         video_writer (imageio writer): video writer
@@ -119,10 +119,11 @@ def playback_trajectory_with_env(
     env.reset()
     env.reset_to(initial_state)
 
-    traj_len = states.shape[0]
+    is_simpler_env = EnvUtils.is_simpler_env(env=env)
+    traj_len = len(states)
     action_playback = (actions is not None)
     if action_playback:
-        assert states.shape[0] == actions.shape[0]
+        assert len(states) == actions.shape[0]
 
     for i in range(traj_len):
         if action_playback:
@@ -130,9 +131,16 @@ def playback_trajectory_with_env(
             if i < traj_len - 1:
                 # check whether the actions deterministically lead to the same recorded states
                 state_playback = env.get_state()["states"]
-                if not np.all(np.equal(states[i + 1], state_playback)):
-                    err = np.linalg.norm(states[i + 1] - state_playback)
-                    print("warning: playback diverged by {} at step {}".format(err, i))
+                if is_simpler_env:
+                    # state is dict, so assert equality for all keys
+                    for k in state_playback:
+                        if not np.all(np.equal(states[i + 1][k], state_playback[k])):
+                            err = np.linalg.norm(states[i + 1][k] - state_playback[k])
+                            print("warning: playback diverged by {} at step {} state key {}".format(err, i, k))
+                else:
+                    if not np.all(np.equal(states[i + 1], state_playback)):
+                        err = np.linalg.norm(states[i + 1] - state_playback)
+                        print("warning: playback diverged by {} at step {}".format(err, i))
         else:
             env.reset_to({"states" : states[i]})
 
@@ -224,8 +232,9 @@ def playback_dataset(args):
         env_meta = FileUtils.get_env_metadata_from_dataset(dataset_path=args.dataset)
         env = EnvUtils.create_env_from_metadata(env_meta=env_meta, render=args.render, render_offscreen=write_video)
 
-        # some operations for playback are robosuite-specific, so determine if this environment is a robosuite env
+        # some operations for playback are env-type-specific
         is_robosuite_env = EnvUtils.is_robosuite_env(env_meta)
+        is_simpler_env = EnvUtils.is_simpler_env(env_meta)
 
     f = h5py.File(args.dataset, "r")
 
@@ -262,7 +271,17 @@ def playback_dataset(args):
             continue
 
         # prepare initial state to reload from
-        states = f["data/{}/states".format(ep)][()]
+        if is_simpler_env:
+            # states are dictionaries - make list of dictionaries
+            traj_len = f["data/{}/actions".format(ep)].shape[0]
+            states = []
+            state_grp = f["data/{}/states".format(ep)]
+            for i in range(traj_len):
+                states.append(
+                    { k : np.array(state_grp[k][i]) for k in state_grp }
+                )
+        else:
+            states = f["data/{}/states".format(ep)][()]
         initial_state = dict(states=states[0])
         if is_robosuite_env:
             initial_state["model"] = f["data/{}".format(ep)].attrs["model_file"]

@@ -106,6 +106,14 @@ def is_robosuite_env(env_meta=None, env_type=None, env=None):
     return check_env_type(type_to_check=EB.EnvType.ROBOSUITE_TYPE, env_meta=env_meta, env_type=env_type, env=env)
 
 
+def is_simpler_env(env_meta=None, env_type=None, env=None):
+    """
+    Determines whether the environment is a SimPLER environment. Accepts
+    either env_meta, env_type, or env.
+    """
+    return check_env_type(type_to_check=EB.EnvType.SIMPLER_TYPE, env_meta=env_meta, env_type=env_type, env=env)
+
+
 def create_env(
     env_type,
     env_name,  
