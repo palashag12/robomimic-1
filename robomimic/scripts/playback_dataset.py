@@ -141,6 +141,8 @@ def playback_trajectory_with_env(
         else:
             env.reset_to({"states" : states[i]})
 
+        print(env.is_success())
+
         # on-screen render
         if render:
             env.render(mode="human", camera_name=camera_names[0])
