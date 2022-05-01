@@ -74,7 +74,7 @@ DEFAULT_CAMERAS = {
     EnvType.ROBOSUITE_TYPE: ["agentview"],
     EnvType.IG_MOMART_TYPE: ["rgb"],
     EnvType.GYM_TYPE: ValueError("No camera names supported for gym type env!"),
-    EnvType.SIMPLER_TYPE: ["default"],
+    EnvType.SIMPLER_TYPE: ["front"],
 }
 
 
@@ -140,8 +140,6 @@ def playback_trajectory_with_env(
                         print("warning: playback diverged by {} at step {}".format(err, i))
         else:
             env.reset_to({"states" : states[i]})
-
-        print(env.is_success())
 
         # on-screen render
         if render:

@@ -28,15 +28,18 @@ import traceback
 
 from collections import OrderedDict
 
+import robomimic
+
 import torch
 from torch.utils.data import DataLoader
 
-import robomimic
+# import robomimic
 import robomimic.utils.train_utils as TrainUtils
 import robomimic.utils.torch_utils as TorchUtils
 import robomimic.utils.obs_utils as ObsUtils
 import robomimic.utils.env_utils as EnvUtils
 import robomimic.utils.file_utils as FileUtils
+import robomimic.utils.macros as Macros
 from robomimic.config import config_factory
 from robomimic.algo import algo_factory, RolloutPolicy
 from robomimic.utils.log_utils import PrintLogger, DataLogger
@@ -50,6 +53,9 @@ def train(config, device):
     # first set seeds
     np.random.seed(config.train.seed)
     torch.manual_seed(config.train.seed)
+
+    # set num workers
+    torch.set_num_threads(1)
 
     print("\n============= New Training Run with Config =============")
     print(config)
@@ -356,6 +362,13 @@ def main(args):
     except Exception as e:
         res_str = "run failed with error:\n{}\n\n{}".format(e, traceback.format_exc())
     print(res_str)
+
+    # maybe give slack notification
+    if Macros.SLACK_TOKEN is not None:
+        from robomimic.scripts.give_slack_notification import give_slack_notif
+        msg = "Completed the following training run!\nHostname: {}\nExperiment Name: {}\n".format(socket.gethostname(), config.experiment.name)
+        msg += "```{}```".format(res_str)
+        give_slack_notif(msg)
 
 
 if __name__ == "__main__":

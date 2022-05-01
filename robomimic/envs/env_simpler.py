@@ -131,8 +131,8 @@ class EnvSimPLER(EB.EnvBase):
         Returns:
             observation (dict): initial observation dictionary.
         """
-        di = self.env.reset()
-        return self.get_observation(di)
+        self.env.reset()
+        return self.get_observation()
 
     def reset_to(self, state):
         """
@@ -159,7 +159,7 @@ class EnvSimPLER(EB.EnvBase):
             return self.get_observation()
         return None
 
-    def render(self, mode="human", height=None, width=None, camera_name="default"):
+    def render(self, mode="human", height=None, width=None, camera_name="front"):
         """
         Render from simulation to either an on-screen window or off-screen to RGB array.
 
@@ -351,4 +351,5 @@ class EnvSimPLER(EB.EnvBase):
         """
         Pretty-print env description.
         """
-        return self.name + "\n" + json.dumps(self._init_kwargs, sort_keys=True, indent=4)
+        kwargs = self.serialize()["env_kwargs"]
+        return self.name + "\n" + json.dumps(kwargs, sort_keys=True, indent=4)
