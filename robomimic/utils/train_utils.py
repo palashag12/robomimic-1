@@ -213,7 +213,7 @@ def run_rollout(
             ac = policy(ob=ob_dict, goal=goal_dict)
 
             # play action
-            ob_dict, r, done, _ = env.step(ac)
+            ob_dict, r, done, step_info = env.step(ac)
 
             # render to screen
             if render:
@@ -237,6 +237,11 @@ def run_rollout(
             # break if done
             if done or (terminate_on_success and success["task"]):
                 break
+
+            # In certain environments, agent might not be the only one controlling the robot.
+            # When someone else controls the robot, we need to reset the agent state.
+            if step_info.get("planner_executed", False):
+                policy.policy.reset()
 
     except env.rollout_exceptions as e:
         print("WARNING: got rollout exception {}".format(e))

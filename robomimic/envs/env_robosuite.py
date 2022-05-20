@@ -7,7 +7,6 @@ import json
 import numpy as np
 from copy import deepcopy
 
-import mujoco_py
 import robosuite
 from robosuite.utils.mjcf_utils import postprocess_model_xml
 
@@ -161,7 +160,7 @@ class EnvRobosuite(EB.EnvBase):
             camera_name (str): camera name to use for rendering
         """
         if mode == "human":
-            cam_id = self.env.sim.model.camera_name2id(camera_name)
+            cam_id = self.env.sim.camera_name2id(camera_name)
             self.env.viewer.set_camera(cam_id)
             return self.env.render()
         elif mode == "rgb_array":
@@ -209,7 +208,7 @@ class EnvRobosuite(EB.EnvBase):
         """
         Get current environment simulator state as a dictionary. Should be compatible with @reset_to.
         """
-        xml = self.env.sim.model.get_xml() # model xml file
+        xml = self.env.sim.get_xml() # model xml file
         state = np.array(self.env.sim.get_state().flatten()) # simulator state
         return dict(model=xml, states=state)
 
@@ -357,7 +356,7 @@ class EnvRobosuite(EB.EnvBase):
         that the entire training run doesn't crash because of a bad policy that causes unstable
         simulation computations.
         """
-        return (mujoco_py.builder.MujocoException)
+        return tuple()
 
     def __repr__(self):
         """
