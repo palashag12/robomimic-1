@@ -502,6 +502,9 @@ class HTAMPRolloutPolicy(RolloutPolicy):
         """
         self.htamp_policy = htamp_policy
         self.htamp_policy.setup()
+
+        # memory of last control mode
+        self.last_control_mode = None
         super(HTAMPRolloutPolicy, self).__init__(policy=policy, obs_normalization_stats=obs_normalization_stats)
 
     def start_episode(self):
@@ -510,6 +513,7 @@ class HTAMPRolloutPolicy(RolloutPolicy):
         """
 
         ### TODO: do we need to do anything with @htamp_policy object here? ###
+        self.last_control_mode = None
         super(HTAMPRolloutPolicy, self).start_episode()
 
     def __repr__(self):
@@ -529,6 +533,11 @@ class HTAMPRolloutPolicy(RolloutPolicy):
             goal (dict): goal observation
         """
         if self.htamp_policy.should_run_planner():
+            # switched from policy to tamp control - handle this switch appropriately here
+            if self.last_control_mode == "policy":
+                ### TODO: implement any re-planning logic! ###
+                pass
+
             # ask tamp policy for action
             
             ### TODO: unfinished plan and re-planning logic should move inside @htamp_policy object ###
@@ -537,7 +546,14 @@ class HTAMPRolloutPolicy(RolloutPolicy):
                 self.htamp_policy.solve()
 
             ac = self.htamp_policy.get_action()
+            self.last_control_mode = "tamp"
         else:
+            # switched from tamp to policy control - handle this switch appropriately here
+            if self.last_control_mode == "tamp":
+                # reset the internal policy state
+                self.policy.reset()
+
             # ask policy for action
             ac = super(HTAMPRolloutPolicy, self).__call__(ob=ob, goal=goal)
+            self.last_control_mode = "policy"
         return ac
