@@ -43,9 +43,6 @@ def get_env_class(env_meta=None, env_type=None, env=None):
     elif env_type == EB.EnvType.SIMPLER_TYPE:
         from robomimic.envs.env_simpler import EnvSimPLER
         return EnvSimPLER
-    elif env_type == EB.EnvType.ROBOSUITE_TAMP_TYPE:
-        from robomimic.envs.env_robosuite_tamp import EnvRobosuiteTAMP
-        return EnvRobosuiteTAMP
     raise Exception("code should never reach this point")
 
 
@@ -106,8 +103,7 @@ def is_robosuite_env(env_meta=None, env_type=None, env=None):
     Determines whether the environment is a robosuite environment. Accepts
     either env_meta, env_type, or env.
     """
-    return check_env_type(type_to_check=EB.EnvType.ROBOSUITE_TYPE, env_meta=env_meta, env_type=env_type, env=env) or \
-        check_env_type(type_to_check=EB.EnvType.ROBOSUITE_TAMP_TYPE, env_meta=env_meta, env_type=env_type, env=env)
+    return check_env_type(type_to_check=EB.EnvType.ROBOSUITE_TYPE, env_meta=env_meta, env_type=env_type, env=env)
 
 
 def is_simpler_env(env_meta=None, env_type=None, env=None):

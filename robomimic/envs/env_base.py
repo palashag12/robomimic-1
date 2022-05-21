@@ -15,7 +15,6 @@ class EnvType:
     GYM_TYPE = 2
     IG_MOMART_TYPE = 3
     SIMPLER_TYPE = 4
-    ROBOSUITE_TAMP_TYPE = 5
 
 
 class EnvBase(abc.ABC):

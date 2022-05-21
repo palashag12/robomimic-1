@@ -475,3 +475,69 @@ class RolloutPolicy(object):
             goal = self._prepare_observation(goal)
         ac = self.policy.get_action(obs_dict=ob, goal_dict=goal)
         return TensorUtils.to_numpy(ac[0])
+
+
+class HTAMPRolloutPolicy(RolloutPolicy):
+    """
+    Perform a mixed rollout, where control can shift back and forth from a trained robomimic
+    policy and an external TAMP planner.
+    """
+    def __init__(
+        self,
+        policy,
+        htamp_policy,
+        obs_normalization_stats=None,
+    ):
+        """
+        Args:
+            policy (Algo instance): @Algo object to wrap to prepare for rollouts
+
+            htamp_policy (HitlTAMP instance): should be an instance of HitlTAMP (see 
+                hitl_tamp gitlab repo)
+
+            obs_normalization_stats (dict): optionally pass a dictionary for observation
+                normalization. This should map observation keys to dicts
+                with a "mean" and "std" of shape (1, ...) where ... is the default
+                shape for the observation.
+        """
+        self.htamp_policy = htamp_policy
+        self.htamp_policy.setup()
+        super(HTAMPRolloutPolicy, self).__init__(policy=policy, obs_normalization_stats=obs_normalization_stats)
+
+    def start_episode(self):
+        """
+        Prepare the policy to start a new rollout.
+        """
+
+        ### TODO: do we need to do anything with @htamp_policy object here? ###
+        super(HTAMPRolloutPolicy, self).start_episode()
+
+    def __repr__(self):
+        """Pretty print network description"""
+        msg = str(self.__class__.__name__)
+        msg += "\n"
+        return msg + "HTAMP Policy:\n" + textwrap.indent(self.htamp_policy.__repr__(), '  ') + \
+               "\n\nPolicy:\n" + textwrap.indent(self.policy.__repr__(), '  ')
+
+    def __call__(self, ob, goal=None):
+        """
+        Produce action from raw observation dict (and maybe goal dict) from environment.
+
+        Args:
+            ob (dict): single observation dictionary from environment (no batch dimension, 
+                and np.array values for each key)
+            goal (dict): goal observation
+        """
+        if self.htamp_policy.should_run_planner():
+            # ask tamp policy for action
+            
+            ### TODO: unfinished plan and re-planning logic should move inside @htamp_policy object ###
+            if not self.htamp_policy.has_unfinished_plan:
+                ### TODO: should not need task name here, since @htamp_policy has env object ###
+                self.htamp_policy.solve()
+
+            ac = self.htamp_policy.get_action()
+        else:
+            # ask policy for action
+            ac = super(HTAMPRolloutPolicy, self).__call__(ob=ob, goal=goal)
+        return ac
