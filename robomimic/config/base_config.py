@@ -118,6 +118,7 @@ class BaseConfig(Config):
         self.experiment.rollout.rate = 50                           # do rollouts every @rate epochs
         self.experiment.rollout.warmstart = 0                       # number of epochs to wait before starting rollouts
         self.experiment.rollout.terminate_on_success = True         # end rollout early after task success
+        self.experiment.rollout.mode = None                         # set to specific strings to support different policy execution modes
 
     def train_config(self):
         """

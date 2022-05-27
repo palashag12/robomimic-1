@@ -41,7 +41,7 @@ import robomimic.utils.env_utils as EnvUtils
 import robomimic.utils.file_utils as FileUtils
 import robomimic.utils.macros as Macros
 from robomimic.config import config_factory
-from robomimic.algo import algo_factory, RolloutPolicy
+from robomimic.algo import algo_factory, RolloutPolicy, HTAMPRolloutPolicy
 from robomimic.utils.log_utils import PrintLogger, DataLogger
 
 
@@ -240,7 +240,14 @@ def train(config, device):
         if config.experiment.rollout.enabled and (epoch > config.experiment.rollout.warmstart) and rollout_check:
 
             # wrap model as a RolloutPolicy to prepare for rollouts
-            rollout_model = RolloutPolicy(model, obs_normalization_stats=obs_normalization_stats)
+            if config.experiment.rollout.mode == "tamp_gated":
+                assert len(envs) == 1
+                from htamp.hitl_tamp import HitlTAMP
+                robosuite_env = envs[list(envs.keys())[0]].env
+                htamp_policy = HitlTAMP(robosuite_env, None, show_planner_gui=False)
+                rollout_model = HTAMPRolloutPolicy(model, htamp_policy=htamp_policy, obs_normalization_stats=obs_normalization_stats)
+            else:
+                rollout_model = RolloutPolicy(model, obs_normalization_stats=obs_normalization_stats)
 
             num_episodes = config.experiment.rollout.n
             all_rollout_logs, video_paths = TrainUtils.rollout_with_stats(
