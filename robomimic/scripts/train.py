@@ -321,6 +321,17 @@ def train(config, device):
     # terminate logging
     data_logger.close()
 
+    # collect important statistics
+    important_stats = dict()
+    prefix = "Rollout/Success_Rate/"
+    for k in data_logger._data:
+        if k.startswith(prefix):
+            suffix = k[len(prefix):]
+            stats = data_logger.get_stats(k)
+            important_stats["{}-max".format(suffix)] = stats["max"]
+            important_stats["{}-mean".format(suffix)] = stats["mean"]
+    return important_stats
+
 
 def main(args):
 
@@ -367,17 +378,25 @@ def main(args):
 
     # catch error during training and print it
     res_str = "finished run successfully!"
+    important_stats = None
     try:
-        train(config, device=device)
+        important_stats = train(config, device=device)
+        important_stats = json.dumps(important_stats, indent=4)
     except Exception as e:
         res_str = "run failed with error:\n{}\n\n{}".format(e, traceback.format_exc())
     print(res_str)
+    if important_stats is not None:
+        print("\nRollout Success Rate Stats")
+        print(important_stats)
 
     # maybe give slack notification
     if Macros.SLACK_TOKEN is not None:
         from robomimic.scripts.give_slack_notification import give_slack_notif
         msg = "Completed the following training run!\nHostname: {}\nExperiment Name: {}\n".format(socket.gethostname(), config.experiment.name)
         msg += "```{}```".format(res_str)
+        if important_stats is not None:
+            msg += "\nRollout Success Rate Stats"
+            msg += "\n```{}```".format(important_stats)
         give_slack_notif(msg)
 
 
