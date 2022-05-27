@@ -110,6 +110,13 @@ def train(config, device):
             envs[env.name] = env
             print(envs[env.name])
 
+        if config.experiment.rollout.mode == "tamp_gated":
+            assert len(envs) == 1
+            from htamp.hitl_tamp import HitlTAMP
+            robosuite_env = envs[list(envs.keys())[0]].env
+            htamp_policy = HitlTAMP(robosuite_env, None, show_planner_gui=False)
+            htamp_policy.setup()
+
     print("")
 
     # setup for a new training run
@@ -241,10 +248,6 @@ def train(config, device):
 
             # wrap model as a RolloutPolicy to prepare for rollouts
             if config.experiment.rollout.mode == "tamp_gated":
-                assert len(envs) == 1
-                from htamp.hitl_tamp import HitlTAMP
-                robosuite_env = envs[list(envs.keys())[0]].env
-                htamp_policy = HitlTAMP(robosuite_env, None, show_planner_gui=False)
                 rollout_model = HTAMPRolloutPolicy(model, htamp_policy=htamp_policy, obs_normalization_stats=obs_normalization_stats)
             else:
                 rollout_model = RolloutPolicy(model, obs_normalization_stats=obs_normalization_stats)

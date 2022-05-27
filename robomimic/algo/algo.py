@@ -501,7 +501,6 @@ class HTAMPRolloutPolicy(RolloutPolicy):
                 shape for the observation.
         """
         self.htamp_policy = htamp_policy
-        self.htamp_policy.setup()
 
         # memory of last control mode
         self.last_control_mode = None
