@@ -511,8 +511,7 @@ class HTAMPRolloutPolicy(RolloutPolicy):
         """
         Prepare the policy to start a new rollout.
         """
-
-        ### TODO: do we need to do anything with @htamp_policy object here? ###
+        self.htamp_policy.reset()
         self.last_control_mode = None
         super(HTAMPRolloutPolicy, self).start_episode()
 
@@ -532,19 +531,13 @@ class HTAMPRolloutPolicy(RolloutPolicy):
                 and np.array values for each key)
             goal (dict): goal observation
         """
-        if self.htamp_policy.should_run_planner():
+        if self.htamp_policy.should_control:
             # switched from policy to tamp control - handle this switch appropriately here
-            if self.last_control_mode == "policy":
-                ### TODO: implement any re-planning logic! ###
-                pass
+            if self.last_control_mode != "tamp":
+                # make a new plan since TAMP gets control after policy
+                self.htamp_policy.reset_subtask()
 
             # ask tamp policy for action
-            
-            ### TODO: unfinished plan and re-planning logic should move inside @htamp_policy object ###
-            if not self.htamp_policy.has_unfinished_plan:
-                ### TODO: should not need task name here, since @htamp_policy has env object ###
-                self.htamp_policy.solve()
-
             ac = self.htamp_policy.get_action()
             self.last_control_mode = "tamp"
         else:
