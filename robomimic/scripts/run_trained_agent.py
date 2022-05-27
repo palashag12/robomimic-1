@@ -211,6 +211,18 @@ def run_trained_agent(args):
         verbose=True,
     )
 
+    if args.tamp_gated:
+        from htamp.hitl_tamp import HitlTAMP
+        from robomimic.algo import HTAMPRolloutPolicy
+        robosuite_env = env.env
+        htamp_policy = HitlTAMP(robosuite_env, None, show_planner_gui=False)
+        htamp_policy.setup()
+        policy = HTAMPRolloutPolicy(
+            policy.policy, # unwrap RolloutPolicy
+            htamp_policy=htamp_policy, 
+            obs_normalization_stats=policy.obs_normalization_stats,
+        )
+
     # maybe set seed
     if args.seed is not None:
         np.random.seed(args.seed)
@@ -367,6 +379,13 @@ if __name__ == "__main__":
         type=int,
         default=None,
         help="(optional) set seed for rollouts",
+    )
+
+    # Whether to run tamp-gated rollouts
+    parser.add_argument(
+        "--tamp-gated",
+        action='store_true',
+        help="whether to run tamp-gated rollouts",
     )
 
     args = parser.parse_args()
