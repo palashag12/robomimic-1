@@ -78,6 +78,16 @@ DEFAULT_CAMERAS = {
 }
 
 
+def add_red_border(frame):
+    """Add a red border to image frame."""
+    border_size = int(0.05 * min(frame.shape[0], frame.shape[1])) # 5% of image
+    frame[:border_size, :, :] = [255., 0., 0.]
+    frame[-border_size:, :, :] = [255., 0., 0.]
+    frame[:, :border_size, :] = [255., 0., 0.]
+    frame[:, -border_size:, :] = [255., 0., 0.]
+    return frame
+
+
 def playback_trajectory_with_env(
     env, 
     initial_state, 
@@ -88,6 +98,7 @@ def playback_trajectory_with_env(
     video_skip=5, 
     camera_names=None,
     first=False,
+    interventions=None,
 ):
     """
     Helper function to playback a single trajectory using the simulator environment.
@@ -150,7 +161,11 @@ def playback_trajectory_with_env(
             if video_count % video_skip == 0:
                 video_img = []
                 for cam_name in camera_names:
-                    video_img.append(env.render(mode="rgb_array", height=512, width=512, camera_name=cam_name))
+                    frame = env.render(mode="rgb_array", height=512, width=512, camera_name=cam_name)
+                    if interventions[i]:
+                        # add red border to frame
+                        frame = add_red_border(frame=frame)
+                    video_img.append(frame)
                 video_img = np.concatenate(video_img, axis=1) # concatenate horizontally
                 video_writer.append_data(video_img)
             video_count += 1
@@ -165,6 +180,7 @@ def playback_trajectory_with_obs(
     video_skip=5, 
     image_names=None,
     first=False,
+    intervention=False,
 ):
     """
     This function reads all "rgb" observations in the dataset trajectory and
@@ -177,21 +193,36 @@ def playback_trajectory_with_obs(
         image_names (list): determines which image observations are used for rendering. Pass more than
             one to output a video with multiple image observations concatenated horizontally.
         first (bool): if True, only use the first frame of each episode.
+        intervention (bool): if True, denote intervention timesteps with a red border
     """
     assert image_names is not None, "error: must specify at least one image observation to use in @image_names"
     video_count = 0
 
+    # figure out which frame indices to iterate over
     traj_len = traj_grp["actions"].shape[0]
-    for i in range(traj_len):
+    frame_inds = range(traj_len)
+    if first:
+        video_skip = 1 # keep all frames
+        if intervention:
+            # find where interventions begin (0 to 1 edge) and get frames right before them
+            if len(traj_grp["interventions"].shape) == 2:
+                all_interventions = traj_grp["interventions"][:, 0].astype(int)
+            else:
+                all_interventions = traj_grp["interventions"][:].astype(int)
+            frame_inds = list(np.nonzero((all_interventions[1:] - all_interventions[:-1]) > 0)[0])
+        else:
+            frame_inds = range(1)
+
+    for i in frame_inds:
         if video_count % video_skip == 0:
             # concatenate image obs together
             im = [traj_grp["obs/{}".format(k)][i] for k in image_names]
             frame = np.concatenate(im, axis=1)
+            if intervention and traj_grp["interventions"][i]:
+                # add red border to frame
+                frame = add_red_border(frame=frame)
             video_writer.append_data(frame)
         video_count += 1
-
-        if first:
-            break
 
 
 def playback_dataset(args):
@@ -264,6 +295,7 @@ def playback_dataset(args):
                 video_skip=args.video_skip,
                 image_names=args.render_image_names,
                 first=args.first,
+                intervention=args.intervention,
             )
             continue
 
@@ -288,6 +320,11 @@ def playback_dataset(args):
         if args.use_actions:
             actions = f["data/{}/actions".format(ep)][()]
 
+        # supply interventions if we need them for visualization
+        interventions = None
+        if args.intervention:
+            interventions = f["data/{}/interventions".format(ep)][()]
+
         playback_trajectory_with_env(
             env=env, 
             initial_state=initial_state, 
@@ -297,6 +334,7 @@ def playback_dataset(args):
             video_skip=args.video_skip,
             camera_names=args.render_image_names,
             first=args.first,
+            interventions=interventions,
         )
 
     f.close()
@@ -378,6 +416,13 @@ if __name__ == "__main__":
         "--first",
         action='store_true',
         help="use first frame of each episode",
+    )
+
+    # Denote intervention timesteps with a red border in the frame
+    parser.add_argument(
+        "--intervention",
+        action='store_true',
+        help="denote intervention timesteps with a red border in the frame",
     )
 
     args = parser.parse_args()
