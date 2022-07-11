@@ -23,6 +23,7 @@ import robomimic.utils.log_utils as LogUtils
 from robomimic.utils.dataset import SequenceDataset
 from robomimic.envs.env_base import EnvBase
 from robomimic.algo import RolloutPolicy
+from htamp.hitl_tamp import NoSolutionException
 
 
 def get_exp_dir(config, auto_remove_exp_dir=False):
@@ -205,6 +206,7 @@ def run_rollout(
 
     total_reward = 0.
     success = { k: False for k in env.is_success() } # success metrics
+    htamp_exception = False
 
     try:
         for step_i in range(horizon):
@@ -238,12 +240,16 @@ def run_rollout(
             if done or (terminate_on_success and success["task"]):
                 break
 
+    except NoSolutionException:
+        htamp_exception = True
+        print("TAMP solver cannot find a solution")
     except env.rollout_exceptions as e:
         print("WARNING: got rollout exception {}".format(e))
 
     results["Return"] = total_reward
     results["Horizon"] = step_i + 1
     results["Success_Rate"] = float(success["task"])
+    results["TAMP_Failure"] = float(htamp_exception)
 
     # log additional success metrics
     for k in success:
