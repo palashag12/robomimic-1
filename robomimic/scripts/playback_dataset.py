@@ -162,7 +162,7 @@ def playback_trajectory_with_env(
                 video_img = []
                 for cam_name in camera_names:
                     frame = env.render(mode="rgb_array", height=512, width=512, camera_name=cam_name)
-                    if interventions[i]:
+                    if (interventions is not None) and interventions[i]:
                         # add red border to frame
                         frame = add_red_border(frame=frame)
                     video_img.append(frame)

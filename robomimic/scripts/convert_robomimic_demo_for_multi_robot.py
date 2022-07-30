@@ -128,6 +128,10 @@ def convert_xml(xml_str):
         eef_tree = get_eef_panda_element(prefix)
         body.append(eef_tree.getroot())
 
+    # NOTE: important for robosuite with DM binding - get floorplane geom and add group="1"
+    floor_geom = worldbody.find("./geom[@name='floor']")
+    floor_geom.set("group", "1")
+
     xml_str = ET.tostring(root, encoding="utf8").decode("utf8")
     return xml_str
 
