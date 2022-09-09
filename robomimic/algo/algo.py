@@ -531,21 +531,31 @@ class HTAMPRolloutPolicy(RolloutPolicy):
             goal (dict): goal observation
         """
         if self.htamp_policy.should_control:
-            # switched from policy to tamp control - handle this switch appropriately here
-            if self.last_control_mode != "tamp":
-                # make a new plan since TAMP gets control after policy
-                self.htamp_policy.reset_subtask()
-
-            # ask tamp policy for action
-            ac = self.htamp_policy.get_action()
-            self.last_control_mode = "tamp"
+            ac = self._htamp_get_action()
+            if ac is None:
+                ac = self._policy_get_action(ob, goal)
         else:
-            # switched from tamp to policy control - handle this switch appropriately here
-            if self.last_control_mode == "tamp":
-                # reset the internal policy state
-                self.policy.reset()
+            ac = self._policy_get_action(ob, goal)
+        return ac
 
-            # ask policy for action
-            ac = super(HTAMPRolloutPolicy, self).__call__(ob=ob, goal=goal)
-            self.last_control_mode = "policy"
+    def _htamp_get_action(self):
+        # switched from policy to tamp control - handle this switch appropriately here
+        if self.last_control_mode != "tamp":
+            # make a new plan since TAMP gets control after policy
+            self.htamp_policy.reset_subtask()
+
+        # ask tamp policy for action
+        ac = self.htamp_policy.get_action()
+        self.last_control_mode = "tamp"
+        return ac
+
+    def _policy_get_action(self, ob, goal=None):
+        # switched from tamp to policy control - handle this switch appropriately here
+        if self.last_control_mode != "policy":
+            # reset the internal policy state
+            self.policy.reset()
+
+        # ask policy for action
+        ac = super(HTAMPRolloutPolicy, self).__call__(ob=ob, goal=goal)
+        self.last_control_mode = "policy"
         return ac

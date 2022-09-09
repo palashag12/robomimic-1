@@ -214,8 +214,7 @@ def run_trained_agent(args):
     if args.tamp_gated:
         from htamp.hitl_tamp import HitlTAMP
         from robomimic.algo import HTAMPRolloutPolicy
-        robosuite_env = env.env
-        htamp_policy = HitlTAMP(robosuite_env, None, show_planner_gui=False)
+        htamp_policy = HitlTAMP(env, show_planner_gui=False)
         htamp_policy.setup()
         policy = HTAMPRolloutPolicy(
             policy.policy, # unwrap RolloutPolicy
