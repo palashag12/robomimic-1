@@ -488,6 +488,8 @@ class HTAMPRolloutPolicy(RolloutPolicy):
         htamp_policy,
         env,
         htamp_use_joint_actions=False,
+        joint_controller_config=None,
+        osc_controller_config=None,
         obs_normalization_stats=None,
     ):
         """
@@ -518,10 +520,8 @@ class HTAMPRolloutPolicy(RolloutPolicy):
 
         if self.htamp_use_joint_actions:
             # store controller configs for swapping controllers when necessary
-            from robosuite.controllers import load_controller_config
-            self._jpos_controller_config = load_controller_config(default_controller="JOINT_POSITION")
-            # trigger controller switch as an easy way to get the current controller config and save it
-            self._osc_controller_config = self.env.env.switch_controllers(self._jpos_controller_config)
+            self._jpos_controller_config = deepcopy(joint_controller_config)
+            self._osc_controller_config = deepcopy(osc_controller_config)
 
         # memory of last control mode
         self.last_control_mode = None

@@ -113,10 +113,19 @@ def train(config, device):
         if config.experiment.rollout.mode == "tamp_gated":
             # make htamp object for tamp planning
             assert len(envs) == 1
-            robosuite_env = envs[list(envs.keys())[0]].env
+            htamp_env = envs[list(envs.keys())[0]]
+
+            joint_controller_config = None
+            osc_controller_config = None
+            if config.experiment.rollout.htamp_use_joint_actions:
+                # NOTE: we need to swap to joint position controller before constructing hitl-tamp object
+                from robosuite.controllers import load_controller_config
+                joint_controller_config = load_controller_config(default_controller="JOINT_POSITION")
+                osc_controller_config = htamp_env.env.switch_controllers(joint_controller_config)
+
             from htamp.hitl_tamp import HitlTAMP
             htamp_policy = HitlTAMP(
-                wrapper=robosuite_env,
+                wrapper=envs[list(envs.keys())[0]],
                 tasks=None,
                 osc=(not config.experiment.rollout.htamp_use_joint_actions),
                 backoff=(not config.experiment.rollout.htamp_use_joint_actions),
@@ -260,6 +269,8 @@ def train(config, device):
                     htamp_policy=htamp_policy,
                     env=envs[list(envs.keys())[0]],
                     htamp_use_joint_actions=config.experiment.rollout.htamp_use_joint_actions,
+                    joint_controller_config=joint_controller_config,
+                    osc_controller_config=osc_controller_config,
                     obs_normalization_stats=obs_normalization_stats,
                 )
             else:

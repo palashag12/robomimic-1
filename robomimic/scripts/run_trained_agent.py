@@ -224,10 +224,18 @@ def run_trained_agent(args):
 
     # if args.tamp_gated:
     if config.experiment.rollout.mode == "tamp_gated":
+        joint_controller_config = None
+        osc_controller_config = None
+        if config.experiment.rollout.htamp_use_joint_actions:
+            # NOTE: we need to swap to joint position controller before constructing hitl-tamp object
+            from robosuite.controllers import load_controller_config
+            joint_controller_config = load_controller_config(default_controller="JOINT_POSITION")
+            osc_controller_config = htamp_env.env.switch_controllers(joint_controller_config)
+
         from htamp.hitl_tamp import HitlTAMP
         from robomimic.algo import HTAMPRolloutPolicy
         htamp_policy = HitlTAMP(
-            wrapper=env.env,
+            wrapper=env,
             tasks=None,
             osc=(not config.experiment.rollout.htamp_use_joint_actions),
             backoff=(not config.experiment.rollout.htamp_use_joint_actions),
@@ -239,6 +247,8 @@ def run_trained_agent(args):
             htamp_policy=htamp_policy,
             env=env,
             htamp_use_joint_actions=config.experiment.rollout.htamp_use_joint_actions,
+            joint_controller_config=joint_controller_config,
+            osc_controller_config=osc_controller_config,
             obs_normalization_stats=policy.obs_normalization_stats,
         )
 
