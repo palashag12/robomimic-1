@@ -76,12 +76,13 @@ class EnvSimPLER(EB.EnvBase):
         else:
             ### TODO: is there a cleaner way to do this? ###
 
-            # assume we need to set args.usd to point to this string - make a file in /tmp
-            tmp_usd_file = "/tmp/{}.usda".format(str(time.time()).replace(".", "_"))
-            f = open(tmp_usd_file, "w")
-            f.write(usd_file_str)
-            f.close()
-            namespace_args.usd = tmp_usd_file
+            # # assume we need to set args.usd to point to this string - make a file in /tmp
+            # tmp_usd_file = "/tmp/{}.usda".format(str(time.time()).replace(".", "_"))
+            # f = open(tmp_usd_file, "w")
+            # f.write(usd_file_str)
+            # f.close()
+            # namespace_args.usd = tmp_usd_file
+            pass
 
         # there is a chance that this was saved as an int during serialization, so convert back
         namespace_args.physics_engine = isaacgym.gymapi.SimType(namespace_args.physics_engine)
