@@ -119,6 +119,7 @@ class BaseConfig(Config):
         self.experiment.rollout.warmstart = 0                       # number of epochs to wait before starting rollouts
         self.experiment.rollout.terminate_on_success = True         # end rollout early after task success
         self.experiment.rollout.mode = None                         # set to specific strings to support different policy execution modes
+        self.experiment.rollout.htamp_use_joint_actions = False     # for "tamp_gated" rollout mode - use joint space actions for TAMP policy
 
     def train_config(self):
         """

@@ -23,7 +23,6 @@ import robomimic.utils.log_utils as LogUtils
 from robomimic.utils.dataset import SequenceDataset
 from robomimic.envs.env_base import EnvBase
 from robomimic.algo import RolloutPolicy
-from htamp.hitl_tamp import NoSolutionException
 
 
 def get_exp_dir(config, auto_remove_exp_dir=False):
@@ -206,13 +205,18 @@ def run_rollout(
 
     total_reward = 0.
     success = { k: False for k in env.is_success() } # success metrics
-    htamp_exception = False
+    tamp_success = True
 
     try:
         for step_i in range(horizon):
 
             # get action from policy
             ac = policy(ob=ob_dict, goal=goal_dict)
+
+            if ac is None:
+                # indicates TAMP failure
+                tamp_success = False
+                break
 
             # play action
             ob_dict, r, done, _ = env.step(ac)
@@ -240,16 +244,13 @@ def run_rollout(
             if done or (terminate_on_success and success["task"]):
                 break
 
-    except NoSolutionException:
-        htamp_exception = True
-        print("TAMP solver cannot find a solution")
     except env.rollout_exceptions as e:
         print("WARNING: got rollout exception {}".format(e))
 
     results["Return"] = total_reward
     results["Horizon"] = step_i + 1
     results["Success_Rate"] = float(success["task"])
-    results["TAMP_Failure"] = float(htamp_exception)
+    results["TAMP_Success_Rate"] = float(tamp_success)
 
     # log additional success metrics
     for k in success:
@@ -374,6 +375,12 @@ def rollout_with_stats(
         rollout_logs = dict((k, [rollout_logs[i][k] for i in range(len(rollout_logs))]) for k in rollout_logs[0])
         rollout_logs_mean = dict((k, np.mean(v)) for k, v in rollout_logs.items())
         rollout_logs_mean["Time_Episode"] = np.sum(rollout_logs["time"]) / 60. # total time taken for rollouts in minutes
+
+        # measure success rate of policy out of all episodes where TAMP did not fail
+        tamp_success_mask = np.array(rollout_logs["TAMP_Success_Rate"]).reshape(-1).astype(float)
+        policy_success = np.array(rollout_logs["Success_Rate"]).reshape(-1).astype(float)
+        rollout_logs_mean["Success_Rate_no_TAMP_fail"] = np.sum(tamp_success_mask * policy_success) / np.sum(tamp_success_mask)
+
         all_rollout_logs[env_name] = rollout_logs_mean
 
     if video_path is not None:
