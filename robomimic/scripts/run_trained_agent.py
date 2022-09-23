@@ -105,6 +105,7 @@ def rollout(policy, env, horizon, render=False, video_writer=None, video_skip=5,
     results = {}
     video_count = 0  # video frame counter
     total_reward = 0.
+    tamp_success = True
     traj = dict(actions=[], rewards=[], dones=[], states=[], initial_state_dict=state_dict)
     if return_obs:
         # store observations too
@@ -114,6 +115,11 @@ def rollout(policy, env, horizon, render=False, video_writer=None, video_skip=5,
 
             # get action from policy
             act = policy(ob=obs)
+
+            if act is None:
+                # indicates TAMP failure
+                tamp_success = False
+                break
 
             # play action
             next_obs, r, done, _ = env.step(act)
@@ -157,7 +163,12 @@ def rollout(policy, env, horizon, render=False, video_writer=None, video_skip=5,
     except env.rollout_exceptions as e:
         print("WARNING: got rollout exception {}".format(e))
 
-    stats = dict(Return=total_reward, Horizon=(step_i + 1), Success_Rate=float(success))
+    stats = dict(
+        Return=total_reward,
+        Horizon=(step_i + 1),
+        Success_Rate=float(success),
+        TAMP_Success_Rate=float(tamp_success),
+    )
 
     if return_obs:
         # convert list of dict to dict of list for obs dictionaries (for convenient writes to hdf5 dataset)
@@ -211,14 +222,34 @@ def run_trained_agent(args):
         verbose=True,
     )
 
-    if args.tamp_gated:
+    # if args.tamp_gated:
+    if config.experiment.rollout.mode == "tamp_gated":
+        joint_controller_config = None
+        osc_controller_config = None
+        if config.experiment.rollout.htamp_use_joint_actions:
+            # NOTE: we need to swap to joint position controller before constructing hitl-tamp object
+            from robosuite.controllers import load_controller_config
+            joint_controller_config = load_controller_config(default_controller="JOINT_POSITION")
+            osc_controller_config = env.env.switch_controllers(joint_controller_config)
+
         from htamp.hitl_tamp import HitlTAMP
         from robomimic.algo import HTAMPRolloutPolicy
-        htamp_policy = HitlTAMP(env, show_planner_gui=False)
+
+        htamp_policy = HitlTAMP(
+            wrapper=env,
+            tasks=None,
+            osc=(not config.experiment.rollout.htamp_use_joint_actions),
+            backoff=(not config.experiment.rollout.htamp_use_joint_actions),
+            show_planner_gui=False,
+        )
         htamp_policy.setup()
         policy = HTAMPRolloutPolicy(
             policy.policy, # unwrap RolloutPolicy
-            htamp_policy=htamp_policy, 
+            htamp_policy=htamp_policy,
+            env=env,
+            htamp_use_joint_actions=config.experiment.rollout.htamp_use_joint_actions,
+            joint_controller_config=joint_controller_config,
+            osc_controller_config=osc_controller_config,
             obs_normalization_stats=policy.obs_normalization_stats,
         )
 
@@ -274,6 +305,13 @@ def run_trained_agent(args):
     rollout_stats = TensorUtils.list_of_flat_dict_to_dict_of_list(rollout_stats)
     avg_rollout_stats = { k : np.mean(rollout_stats[k]) for k in rollout_stats }
     avg_rollout_stats["Num_Success"] = np.sum(rollout_stats["Success_Rate"])
+
+    if config.experiment.rollout.mode == "tamp_gated":
+        # measure success rate of policy out of all episodes where TAMP did not fail
+        tamp_success_mask = np.array(rollout_stats["TAMP_Success_Rate"]).reshape(-1).astype(float)
+        policy_success = np.array(rollout_stats["Success_Rate"]).reshape(-1).astype(float)
+        avg_rollout_stats["Success_Rate_no_TAMP_fail"] = np.sum(tamp_success_mask * policy_success) / np.sum(tamp_success_mask)
+
     print("Average Rollout Stats")
     print(json.dumps(avg_rollout_stats, indent=4))
 
@@ -380,7 +418,7 @@ if __name__ == "__main__":
         help="(optional) set seed for rollouts",
     )
 
-    # Whether to run tamp-gated rollouts
+    # # Whether to run tamp-gated rollouts
     parser.add_argument(
         "--tamp-gated",
         action='store_true',

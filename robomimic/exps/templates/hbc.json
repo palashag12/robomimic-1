@@ -31,7 +31,8 @@
             "rate": 50,
             "warmstart": 0,
             "terminate_on_success": true,
-            "mode": null
+            "mode": null,
+            "htamp_use_joint_actions": false
         }
     },
     "train": {

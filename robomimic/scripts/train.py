@@ -111,10 +111,26 @@ def train(config, device):
             print(envs[env.name])
 
         if config.experiment.rollout.mode == "tamp_gated":
+            # make htamp object for tamp planning
             assert len(envs) == 1
+            htamp_env = envs[list(envs.keys())[0]]
+
+            joint_controller_config = None
+            osc_controller_config = None
+            if config.experiment.rollout.htamp_use_joint_actions:
+                # NOTE: we need to swap to joint position controller before constructing hitl-tamp object
+                from robosuite.controllers import load_controller_config
+                joint_controller_config = load_controller_config(default_controller="JOINT_POSITION")
+                osc_controller_config = htamp_env.env.switch_controllers(joint_controller_config)
+
             from htamp.hitl_tamp import HitlTAMP
-            robosuite_env = envs[list(envs.keys())[0]].env
-            htamp_policy = HitlTAMP(robosuite_env, None, show_planner_gui=False)
+            htamp_policy = HitlTAMP(
+                wrapper=envs[list(envs.keys())[0]],
+                tasks=None,
+                osc=(not config.experiment.rollout.htamp_use_joint_actions),
+                backoff=(not config.experiment.rollout.htamp_use_joint_actions),
+                show_planner_gui=False,
+            )
             htamp_policy.setup()
 
     print("")
@@ -248,7 +264,15 @@ def train(config, device):
 
             # wrap model as a RolloutPolicy to prepare for rollouts
             if config.experiment.rollout.mode == "tamp_gated":
-                rollout_model = HTAMPRolloutPolicy(model, htamp_policy=htamp_policy, obs_normalization_stats=obs_normalization_stats)
+                rollout_model = HTAMPRolloutPolicy(
+                    model,
+                    htamp_policy=htamp_policy,
+                    env=envs[list(envs.keys())[0]],
+                    htamp_use_joint_actions=config.experiment.rollout.htamp_use_joint_actions,
+                    joint_controller_config=joint_controller_config,
+                    osc_controller_config=osc_controller_config,
+                    obs_normalization_stats=obs_normalization_stats,
+                )
             else:
                 rollout_model = RolloutPolicy(model, obs_normalization_stats=obs_normalization_stats)
 

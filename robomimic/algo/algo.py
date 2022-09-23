@@ -486,6 +486,10 @@ class HTAMPRolloutPolicy(RolloutPolicy):
         self,
         policy,
         htamp_policy,
+        env,
+        htamp_use_joint_actions=False,
+        joint_controller_config=None,
+        osc_controller_config=None,
         obs_normalization_stats=None,
     ):
         """
@@ -495,16 +499,37 @@ class HTAMPRolloutPolicy(RolloutPolicy):
             htamp_policy (HitlTAMP instance): should be an instance of HitlTAMP (see 
                 hitl_tamp gitlab repo)
 
+            env (EnvBase instance): robomimic environment
+
+            htamp_use_joint_actions (bool): if True, use joint space actions during TAMP portions
+
             obs_normalization_stats (dict): optionally pass a dictionary for observation
                 normalization. This should map observation keys to dicts
                 with a "mean" and "std" of shape (1, ...) where ... is the default
                 shape for the observation.
         """
+
+        # htamp object for tamp planning
         self.htamp_policy = htamp_policy
+
+        # environment
+        self.env = env
+
+        # whether to use joint space actions
+        self.htamp_use_joint_actions = htamp_use_joint_actions
+
+        if self.htamp_use_joint_actions:
+            # store controller configs for swapping controllers when necessary
+            self._jpos_controller_config = deepcopy(joint_controller_config)
+            self._osc_controller_config = deepcopy(osc_controller_config)
 
         # memory of last control mode
         self.last_control_mode = None
-        super(HTAMPRolloutPolicy, self).__init__(policy=policy, obs_normalization_stats=obs_normalization_stats)
+
+        super(HTAMPRolloutPolicy, self).__init__(
+            policy=policy,
+            obs_normalization_stats=obs_normalization_stats,
+        )
 
     def start_episode(self):
         """
@@ -531,11 +556,51 @@ class HTAMPRolloutPolicy(RolloutPolicy):
             goal (dict): goal observation
         """
         if self.htamp_policy.should_control:
-            ac = self._htamp_get_action()
+            # TAMP policy controls
+
+            if self.last_control_mode != "tamp":
+                # TAMP policy resumes control after policy or at start of episode
+                if self.htamp_use_joint_actions:
+                    # swap to joint position controller
+                    self.env.env.switch_controllers(self._jpos_controller_config)
+
+            # ask tamp policy for action
+            ac = self.htamp_policy.get_action()
+            self.last_control_mode = "tamp"
+
             if ac is None:
-                ac = self._policy_get_action(ob, goal)
-        else:
-            ac = self._policy_get_action(ob, goal)
+                # ensure that TAMP is done controlling
+                assert not self.htamp_policy.should_control
+
+                # we will continue through to policy control
+            else:
+                if ac is False:
+                    # TAMP policy failed - return None action to indicate rollout failure
+                    ac = None
+                # return action
+                return ac
+
+        if self.last_control_mode != "policy":
+            # policy resumes control after TAMP policy or at start of episode
+
+            # invalidate any unfinished plan
+            self.htamp_policy.reset_subtask()
+
+            if self.htamp_use_joint_actions:
+                # swap to OSC controller
+                self.env.env.switch_controllers(self._osc_controller_config)
+
+            if self.last_control_mode == "tamp":
+                # NOTE: policy is already reset in @start_episode, so we only need reset if resuming after TAMP
+                self.policy.reset()
+
+        if self.htamp_use_joint_actions and (self.last_control_mode != "policy"):
+            # resume policy control from other control mode - swap to OSC controller
+            self.env.env.switch_controllers(self._osc_controller_config)
+
+        # ask policy for action
+        ac = super(HTAMPRolloutPolicy, self).__call__(ob=ob, goal=goal)
+        self.last_control_mode = "policy"
         return ac
 
     def _htamp_get_action(self):
