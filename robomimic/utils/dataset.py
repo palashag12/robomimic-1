@@ -611,3 +611,192 @@ class SequenceDataset(torch.utils.data.Dataset):
         `DataLoader` documentation, for more info.
         """
         return None
+
+
+def get_intervention_segments(interventions):
+    """
+    Splits interventions list into a list of start and end indices (windows) of continuous intervention segments.
+    """
+    interventions = interventions.reshape(-1).astype(int)
+    # pad before and after to make it easy to count starting and ending intervention segments
+    expanded_ints = [False] + interventions.astype(bool).tolist() + [False]
+    start_inds = []
+    end_inds = []
+    for i in range(1, len(expanded_ints)):
+        if expanded_ints[i] and (not expanded_ints[i - 1]):
+            # low to high edge means start of new window
+            start_inds.append(i - 1) # record index in original array which is one less (since we added an element to the beg)
+        elif (not expanded_ints[i]) and expanded_ints[i - 1]:
+            # high to low edge means end of previous window
+            end_inds.append(i - 1) # record index in original array which is one less (since we added an element to the beg)
+
+    # run some sanity checks
+    assert len(start_inds) == len(end_inds), "missing window edge"
+    assert np.all([np.sum(interventions[s : e]) == (e - s) for s, e in zip(start_inds, end_inds)]), "window computation covers non-interventions"
+    assert sum([np.sum(interventions[s : e]) for s, e in zip(start_inds, end_inds)]) == np.sum(interventions), "window computation does not cover all interventions"
+    return list(zip(start_inds, end_inds))
+
+
+class HTAMPDataset(SequenceDataset):
+    """Dataset interface for Hitl-TAMP"""
+    def load_demo_info(self, filter_by_attribute=None, demos=None):
+        """
+        Args:
+            filter_by_attribute (str): if provided, use the provided filter key
+                to select a subset of demonstration trajectories to load
+
+            demos (list): list of demonstration keys to load from the hdf5 file. If
+                omitted, all demos in the file (or under the @filter_by_attribute
+                filter key) are used.
+        """
+        # filter demo trajectory by mask
+        if demos is not None:
+            pass
+        elif filter_by_attribute is not None:
+            demos = [elem.decode("utf-8") for elem in np.array(self.hdf5_file["mask/{}".format(filter_by_attribute)][:])]
+        else:
+            demos = list(self.hdf5_file["data"].keys())
+
+        # sort demo keys
+        inds = np.argsort([int(elem[5:]) for elem in demos])
+        demos = [demos[i] for i in inds]
+
+        # keep internal index maps to know which transitions belong to which demos
+        self._index_to_demo_id = dict()  # maps every index to a demo id
+        self._demo_id_to_start_indices = dict()  # gives start index per demo id
+        self._demo_id_to_demo_length = dict()
+
+        segmented_demos = []
+
+        # determine index mapping
+        self.total_num_sequences = 0
+        for ep in demos:
+            interventions = self.hdf5_file["data/{}/interventions".format(ep)][()].reshape(-1).astype(int)
+            segments = get_intervention_segments(interventions)
+            # treat each consecutive intervention as a separate demo
+            for s_i, (s_start, s_end) in enumerate(segments):
+                demo_length = s_end - s_start
+                seg_ep = ep + "_{}".format(s_i)
+                self._demo_id_to_start_indices[seg_ep] = self.total_num_sequences
+                self._demo_id_to_demo_length[seg_ep] = demo_length
+
+                num_sequences = demo_length
+                # determine actual number of sequences taking into account whether to pad for frame_stack and seq_length
+                if not self.pad_frame_stack:
+                    num_sequences -= (self.n_frame_stack - 1)
+                if not self.pad_seq_length:
+                    num_sequences -= (self.seq_length - 1)
+
+                if self.pad_seq_length:
+                    assert demo_length >= 1  # sequence needs to have at least one sample
+                    num_sequences = max(num_sequences, 1)
+                else:
+                    assert num_sequences >= 1  # assume demo_length >= (self.n_frame_stack - 1 + self.seq_length)
+
+                for _ in range(num_sequences):
+                    self._index_to_demo_id[self.total_num_sequences] = seg_ep
+                    self.total_num_sequences += 1
+
+                segmented_demos.append(seg_ep)
+
+        self.demos = segmented_demos
+        self.n_demos = len(self.demos)
+
+    def load_dataset_in_memory(self, demo_list, hdf5_file, obs_keys, dataset_keys, load_next_obs):
+        """
+        Loads the hdf5 dataset into memory, preserving the structure of the file. Note that this
+        differs from `self.getitem_cache`, which, if active, actually caches the outputs of the
+        `getitem` operation.
+
+        Args:
+            demo_list (list): list of demo keys, e.g., 'demo_0'
+            hdf5_file (h5py.File): file handle to the hdf5 dataset.
+            obs_keys (list, tuple): observation keys to fetch, e.g., 'images'
+            dataset_keys (list, tuple): dataset keys to fetch, e.g., 'actions'
+            load_next_obs (bool): whether to load next_obs from the dataset
+
+        Returns:
+            all_data (dict): dictionary of loaded data.
+        """
+        all_data = dict()
+        print("SequenceDataset: loading dataset into memory...")
+        for seg_ep in LogUtils.custom_tqdm(demo_list):
+            ep, seg_i = seg_ep.rsplit("_", 1)
+            interventions = self.hdf5_file["data/{}/interventions".format(ep)][()].reshape(-1).astype(int)
+            s_start, s_end = get_intervention_segments(interventions)[int(seg_i)]
+            num_samples = s_end - s_start
+            all_data[seg_ep] = {}
+            all_data[seg_ep]["attrs"] = {}
+            all_data[seg_ep]["attrs"]["num_samples"] = num_samples
+            # get obs
+            all_data[seg_ep]["obs"] = {k: hdf5_file["data/{}/obs/{}".format(ep, k)][s_start: s_end].astype('float32') for k in obs_keys}
+            if load_next_obs:
+                all_data[seg_ep]["next_obs"] = {k: hdf5_file["data/{}/next_obs/{}".format(ep, k)][s_start: s_end].astype('float32') for k in obs_keys}
+            # get other dataset keys
+            for k in dataset_keys:
+                if k in hdf5_file["data/{}".format(ep)]:
+                    all_data[seg_ep][k] = hdf5_file["data/{}/{}".format(ep, k)][s_start: s_end].astype('float32')
+                else:
+                    all_data[seg_ep][k] = np.zeros((num_samples, 1), dtype=np.float32)
+
+            if "model_file" in hdf5_file["data/{}".format(ep)].attrs:
+                all_data[seg_ep]["attrs"]["model_file"] = hdf5_file["data/{}".format(ep)].attrs["model_file"]
+
+        return all_data
+
+    def get_dataset_for_ep(self, seg_ep, key):
+        """
+        Helper utility to get a dataset for a specific demonstration.
+        Takes into account whether the dataset has been loaded into memory.
+        """
+
+        # check if this key should be in memory
+        key_should_be_in_memory = (self.hdf5_cache_mode in ["all", "low_dim"])
+        if key_should_be_in_memory:
+            # if key is an observation, it may not be in memory
+            if '/' in key:
+                key1, key2 = key.split('/')
+                assert(key1 in ['obs', 'next_obs'])
+                if key2 not in self.obs_keys_in_memory:
+                    key_should_be_in_memory = False
+
+        if key_should_be_in_memory:
+            # read cache
+            if '/' in key:
+                key1, key2 = key.split('/')
+                assert(key1 in ['obs', 'next_obs'])
+                ret = self.hdf5_cache[seg_ep][key1][key2]
+            else:
+                ret = self.hdf5_cache[seg_ep][key]
+        else:
+            # read from file
+            ep, seg_i = seg_ep.rsplit("_", 1)
+            interventions = self.hdf5_file["data/{}/interventions".format(ep)][()].reshape(-1).astype(int)
+            s_start, s_end = get_intervention_segments(interventions)[int(seg_i)]
+            hd5key = "data/{}/{}".format(ep, key)
+            ret = self.hdf5_file[hd5key][s_start: s_end]
+        return ret
+
+
+if __name__ == "__main__":
+    import numpy as np
+
+    import torch
+    from torch.utils.data import DataLoader
+
+    import robomimic
+    import robomimic.utils.obs_utils as ObsUtils
+    # import robomimic.utils.file_utils as FileUtils
+
+    from robomimic.config import config_factory
+    config = config_factory(algo_name="bc")
+    ObsUtils.initialize_obs_utils_with_config(config)
+    ds = HTAMPDataset(
+        hdf5_path="~/workspace/rl/RobotTeleop/test_tamp/demos/square.hdf5",
+        obs_keys=["object"],
+        dataset_keys=["actions", "rewards"],
+        hdf5_cache_mode="low_dim"
+    )
+
+    from IPython import embed;
+    embed()
