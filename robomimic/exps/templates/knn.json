@@ -1,8 +1,8 @@
 {
-    "algo_name": "bc",
+    "algo_name": "knn",
     "experiment": {
         "name": "test",
-        "validate": true,
+        "validate": false,
         "logging": {
             "terminal_output_to_txt": true,
             "log_tb": true
@@ -10,7 +10,7 @@
         "save": {
             "enabled": true,
             "every_n_seconds": null,
-            "every_n_epochs": 50,
+            "every_n_epochs": 1,
             "epochs": [],
             "on_best_validation": false,
             "on_best_rollout_return": false,
@@ -35,7 +35,7 @@
     },
     "train": {
         "data": null,
-        "output_dir": "../bc_trained_models",
+        "output_dir": "../knn_trained_models",
         "num_data_workers": 0,
         "hdf5_cache_mode": "all",
         "hdf5_use_swmr": true,
@@ -50,7 +50,7 @@
         "goal_mode": null,
         "cuda": true,
         "batch_size": 100,
-        "num_epochs": 2000,
+        "num_epochs": 1,
         "seed": 1
     },
     "algo": {
@@ -66,82 +66,16 @@
                 }
             }
         },
-        "loss": {
-            "l2_weight": 1.0,
-            "l1_weight": 0.0,
-            "cos_weight": 0.0
-        },
-        "actor_layer_dims": [
-            1024,
-            1024
-        ],
-        "gaussian": {
-            "enabled": false,
-            "fixed_std": false,
-            "init_std": 0.1,
-            "min_std": 0.01,
-            "std_activation": "softplus",
-            "low_noise_eval": true
-        },
-        "gmm": {
-            "enabled": false,
-            "num_modes": 5,
-            "min_std": 0.0001,
-            "std_activation": "softplus",
-            "low_noise_eval": true
-        },
-        "vae": {
-            "enabled": false,
-            "latent_dim": 14,
-            "latent_clip": null,
-            "kl_weight": 1.0,
-            "decoder": {
-                "is_conditioned": true,
-                "reconstruction_sum_across_elements": false
-            },
-            "prior": {
-                "learn": false,
-                "is_conditioned": false,
-                "use_gmm": false,
-                "gmm_num_modes": 10,
-                "gmm_learn_weights": false,
-                "use_categorical": false,
-                "categorical_dim": 10,
-                "categorical_gumbel_softmax_hard": false,
-                "categorical_init_temp": 1.0,
-                "categorical_temp_anneal_step": 0.001,
-                "categorical_min_temp": 0.3
-            },
-            "encoder_layer_dims": [
-                300,
-                400
-            ],
-            "decoder_layer_dims": [
-                300,
-                400
-            ],
-            "prior_layer_dims": [
-                300,
-                400
-            ]
-        },
-        "rnn": {
-            "enabled": false,
-            "horizon": 10,
-            "hidden_dim": 400,
-            "rnn_type": "LSTM",
-            "num_layers": 2,
-            "open_loop": false,
-            "kwargs": {
-                "bidirectional": false
-            }
-        }
+        "k": 6,
+        "beta": 200
     },
     "observation": {
         "modalities": {
             "obs": {
                 "low_dim": [
-
+                    "robot0_eef_pos",
+                    "robot0_eef_quat",
+                    "robot0_gripper_qpos",
                     "object"
                 ],
                 "rgb": [],
