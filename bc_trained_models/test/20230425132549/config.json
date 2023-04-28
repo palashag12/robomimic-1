@@ -1,5 +1,5 @@
 {
-    "algo_name": "gl",
+    "algo_name": "bc",
     "experiment": {
         "name": "test",
         "validate": true,
@@ -20,7 +20,7 @@
         "validation_epoch_every_n_steps": 10,
         "env": null,
         "additional_envs": null,
-        "render": false,
+        "render": true,
         "render_video": true,
         "keep_all_videos": false,
         "video_skip": 5,
@@ -34,8 +34,8 @@
         }
     },
     "train": {
-        "data": null,
-        "output_dir": "../gl_trained_models",
+        "data": "datasets/lift/ph/image.hdf5",
+        "output_dir": "../bc_trained_models",
         "num_data_workers": 0,
         "hdf5_cache_mode": "all",
         "hdf5_use_swmr": true,
@@ -55,7 +55,7 @@
     },
     "algo": {
         "optim_params": {
-            "goal_network": {
+            "policy": {
                 "learning_rate": {
                     "initial": 0.0001,
                     "decay_factor": 0.1,
@@ -66,16 +66,33 @@
                 }
             }
         },
-        "subgoal_horizon": 10,
-        "ae": {
-            "planner_layer_dims": [
-                300,
-                400
-            ]
+        "loss": {
+            "l2_weight": 1.0,
+            "l1_weight": 0.0,
+            "cos_weight": 0.0
+        },
+        "actor_layer_dims": [
+            1024,
+            1024
+        ],
+        "gaussian": {
+            "enabled": false,
+            "fixed_std": false,
+            "init_std": 0.1,
+            "min_std": 0.01,
+            "std_activation": "softplus",
+            "low_noise_eval": true
+        },
+        "gmm": {
+            "enabled": false,
+            "num_modes": 5,
+            "min_std": 0.0001,
+            "std_activation": "softplus",
+            "low_noise_eval": true
         },
         "vae": {
-            "enabled": true,
-            "latent_dim": 16,
+            "enabled": false,
+            "latent_dim": 14,
             "latent_clip": null,
             "kl_weight": 1.0,
             "decoder": {
@@ -107,37 +124,31 @@
                 300,
                 400
             ]
+        },
+        "rnn": {
+            "enabled": false,
+            "horizon": 10,
+            "hidden_dim": 400,
+            "rnn_type": "LSTM",
+            "num_layers": 2,
+            "open_loop": false,
+            "kwargs": {
+                "bidirectional": false
+            }
         }
     },
     "observation": {
         "modalities": {
             "obs": {
-                "low_dim": [
-                    "robot0_eef_pos",
-                    "robot0_eef_quat",
-                    "robot0_gripper_qpos",
-                    "object"
-                ],
+                "low_dim": [],
                 "rgb": [
-                    "rgb",
-                    "rgb_wrist"
+                    "agentview_image"
                 ],
                 "depth": [],
                 "scan": []
             },
             "goal": {
                 "low_dim": [],
-                "rgb": [],
-                "depth": [],
-                "scan": []
-            },
-            "subgoal": {
-                "low_dim": [
-                    "robot0_eef_pos",
-                    "robot0_eef_quat",
-                    "robot0_gripper_qpos",
-                    "object"
-                ],
                 "rgb": [],
                 "depth": [],
                 "scan": []

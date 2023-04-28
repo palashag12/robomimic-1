@@ -9,12 +9,14 @@ such as @_create_critics, @process_batch_for_training, and
 from the BCQ algo class) to be explicit and have implementation details
 self-contained in this file.
 """
+import torchvision.transforms as T
 from collections import OrderedDict
 import numpy
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
+from r3m import load_r3m
+from PIL import Image
 import robomimic.models.obs_nets as ObsNets
 import robomimic.models.policy_nets as PolicyNets
 import robomimic.models.value_nets as ValueNets
@@ -151,7 +153,8 @@ def knn_regression2(KDTree,  Y_train, X_test, k, beta):
         global minc
 
 
-        dist, ind = KDTree.query(scale_new_row_to_01(numpy.asarray(X_test), maxc, minc)[0], k)
+        #dist, ind = KDTree.query(scale_new_row_to_01(numpy.asarray(X_test), maxc, minc)[0], k)
+        dist, ind = KDTree.query(numpy.asarray(self.r3m(X_test)), k)
 
         # calculate the distance between the test data point and each training data point
 
@@ -197,6 +200,13 @@ class KNN(PolicyAlgo):
         self.states = []
         self.states_dict = {}
         self.actions = []
+        self.r3m = load_r3m("resnet50")  # resnet18, resnet34
+        self.r3m.eval()
+        self.transform = T.ToPILImage()
+
+        self.transforms = T.Compose([T.Resize(256),
+                                T.CenterCrop(224),
+                                T.ToTensor()])  # ToTensor() divides by 255
 
     def euclidean_distance(x1, x2):
         return torch.sqrt(torch.sum((x1 - x2) ** 2))
@@ -246,22 +256,33 @@ class KNN(PolicyAlgo):
 
             #self.states.append(batch['obs']['object'])
 
-        for j in batch['obs']['object']:
+        #for j in batch['obs']['object']:
 
 
-            self.states.append(j)
+        #    self.states.append(j)
+
+
+
+        for j in batch['obs']['agentview_image']:
+
+            preprocessed_image = self.transforms(self.transform(j)).reshape(-1, 3, 224, 224)
+            with torch.no_grad():
+                embedding = self.r3m(preprocessed_image * 255.0)  ## R3M expects image input to be [0-255]
+                self.states.append(embedding[0])
 
         for i in batch['actions']:
             self.actions.append(i)
 
         numpy_list = [numpy.asarray(t) for t in self.states]
-        scale = scale_columns_to_01(numpy_list)
-        global maxc
-        global minc
-        maxc = scale[1]
-        minc = scale[2]
+        #scale = scale_columns_to_01(numpy_list)
+        #global maxc
+        #global minc
+        #maxc = scale[1]
+        #minc = scale[2]
+        #print(numpy_list)
+        #self.KdTree = KDTree(scale[0])
+        self.KdTree = KDTree(numpy_list)
 
-        self.KdTree = KDTree(scale[0])
     def get_action(self, obs_dict, goal_dict=None):
         """
         Get policy action outputs.
@@ -273,7 +294,8 @@ class KNN(PolicyAlgo):
         Returns:
             action (torch.Tensor): action tensor
         """
+        return knn_regression2(self.KdTree, self.actions, obs_dict['agentview_image'], self.algo_config.k, self.algo_config.beta )
 
-        return knn_regression2(self.KdTree, self.actions, obs_dict['object'], self.algo_config.k, self.algo_config.beta )
+        #return knn_regression2(self.KdTree, self.actions, obs_dict['object'], self.algo_config.k, self.algo_config.beta )
 
 

@@ -2,7 +2,7 @@
     "algo_name": "knn",
     "experiment": {
         "name": "test",
-        "validate": false,
+        "validate": true,
         "logging": {
             "terminal_output_to_txt": true,
             "log_tb": true
@@ -10,7 +10,7 @@
         "save": {
             "enabled": true,
             "every_n_seconds": null,
-            "every_n_epochs": 1,
+            "every_n_epochs": 50,
             "epochs": [],
             "on_best_validation": false,
             "on_best_rollout_return": false,
@@ -26,7 +26,7 @@
         "video_skip": 5,
         "rollout": {
             "enabled": true,
-            "n": 50,
+            "n": 1,
             "horizon": 400,
             "rate": 50,
             "warmstart": 0,
@@ -66,19 +66,18 @@
                 }
             }
         },
-        "k": 6,
-        "beta": 200
+        "k": 9,
+        "beta": 100
     },
     "observation": {
         "modalities": {
             "obs": {
                 "low_dim": [
-                    "robot0_eef_pos",
-                    "robot0_eef_quat",
-                    "robot0_gripper_qpos",
-                    "object"
+
                 ],
-                "rgb": [],
+                "rgb": [
+                    "agentview_image"
+                ],
                 "depth": [],
                 "scan": []
             },

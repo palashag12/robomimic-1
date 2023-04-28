@@ -114,7 +114,10 @@
                 "low_dim": [
                     "flat"
                 ],
-                "rgb": [],
+                "rgb": [
+                    "rgb",
+                    "rgb_wrist"
+                ],
                 "depth": [],
                 "scan": []
             },

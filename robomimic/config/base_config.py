@@ -211,7 +211,7 @@ class BaseConfig(Config):
             "robot0_gripper_qpos", 
             "object",
         ]
-        self.observation.modalities.obs.rgb = []              # specify rgb image observations for agent
+        self.observation.modalities.obs.rgb = ["camera1", "camera2"]              # specify rgb image observations for agent
         self.observation.modalities.obs.depth = []
         self.observation.modalities.obs.scan = []
         self.observation.modalities.goal.low_dim = []           # specify low-dim goal observations to condition agent on

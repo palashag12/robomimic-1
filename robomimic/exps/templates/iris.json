@@ -289,7 +289,10 @@
                             "robot0_gripper_qpos",
                             "object"
                         ],
-                        "rgb": [],
+                        "rgb": [
+                            "rgb",
+                            "rgb_wrist"
+                        ],
                         "depth": [],
                         "scan": []
                     },
@@ -423,7 +426,10 @@
                             "robot0_gripper_qpos",
                             "object"
                         ],
-                        "rgb": [],
+                        "rgb": [
+                            "rgb",
+                            "rgb_wrist"
+                        ],
                         "depth": [],
                         "scan": []
                     },
@@ -547,7 +553,10 @@
                         "robot0_gripper_qpos",
                         "object"
                     ],
-                    "rgb": [],
+                    "rgb": [
+                        "rgb",
+                        "rgb_wrist"
+                    ],
                     "depth": [],
                     "scan": []
                 },
