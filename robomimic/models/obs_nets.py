@@ -601,6 +601,43 @@ class MIMO_MLP(Module):
         msg += textwrap.indent("\n\ndecoder={}".format(self.nets["decoder"]), indent)
         msg = header + '(' + msg + '\n)'
         return msg
+class GaussianMixtureLayer(nn.Module):
+    def __init__(self, input_dim, num_modes, output_dim):
+        super(GaussianMixtureLayer, self).__init__()
+        self.num_modes = num_modes
+        self.mean_layer = nn.Linear(input_dim, num_modes * output_dim)
+        self.logvar_layer = nn.Linear(input_dim, num_modes * output_dim)
+        self.weights = nn.Parameter(torch.ones(num_modes) / num_modes)
+        
+    def forward(self, x):
+        mean = self.mean_layer(x).view(-1, self.num_modes, output_dim)
+        logvar = self.logvar_layer(x).view(-1, self.num_modes, output_dim)
+        return mean, logvar, self.weights
+
+# Define the Multilayer Perceptron model
+class MLPRegressionGMM(nn.Module):
+    def __init__(self, input_dim, hidden_dim1, hidden_dim2, num_modes, output_dim):
+        super(MLPRegressionGMM, self).__init__()
+        self.hidden_layer1 = nn.Linear(input_dim, hidden_dim1)
+        self.activation1 = nn.Tanh()  # Custom activation function
+        self.hidden_layer2 = nn.Linear(hidden_dim1, hidden_dim2)
+        self.activation2 = nn.Tanh()  # Custom activation function
+        self.output_layer = GaussianMixtureLayer(hidden_dim2, num_modes, output_dim)
+        
+    def forward(self, x):
+        x = self.activation1(self.hidden_layer1(x))
+        x = self.activation2(self.hidden_layer2(x))
+        return self.output_layer(x)
+
+
+
+
+
+
+
+
+
+
 
 
 class RNN_MIMO_MLP(Module):
@@ -690,6 +727,8 @@ class RNN_MIMO_MLP(Module):
         rnn_output_dim = num_directions * rnn_hidden_dim
 
         per_step_net = None
+        per_step_net2 = None
+        per_step_net3 = None
         self._has_mlp = (len(mlp_layer_dims) > 0)
         if self._has_mlp:
             self.nets["mlp"] = MLP(
@@ -699,12 +738,33 @@ class RNN_MIMO_MLP(Module):
                 output_activation=mlp_activation,
                 layer_func=mlp_layer_func
             )
+            self.nets["modes"] = MLP(
+                input_dim=rnn_output_dim,
+                output_dim= 1,
+                layer_dims=mlp_layer_dims[:-1],
+                output_activation=nn.Sigmoid,
+                layer_func=mlp_layer_func
+            )
+            self.nets["waypoints"] = MLP(
+                input_dim=rnn_output_dim,
+                output_dim= mlp_layer_dims[-1],
+                layer_dims= [200, 200, 200],
+                output_activation=mlp_activation,
+                layer_func=mlp_layer_func
+            )
             self.nets["decoder"] = ObservationDecoder(
                 decode_shapes=self.output_shapes,
                 input_feat_dim=mlp_layer_dims[-1],
             )
+            self.nets["decoder2"] = ObservationDecoder(
+                decode_shapes=self.output_shapes,
+                input_feat_dim=mlp_layer_dims[-1],
+            )
             if self.per_step:
+                print("HI")
                 per_step_net = Sequential(self.nets["mlp"], self.nets["decoder"])
+                per_step_net2 = Sequential(self.nets["waypoints"], self.nets["decoder2"])
+                per_step_net3 = self.nets["modes"]
         else:
             self.nets["decoder"] = ObservationDecoder(
                 decode_shapes=self.output_shapes,
@@ -720,9 +780,17 @@ class RNN_MIMO_MLP(Module):
             rnn_num_layers=rnn_num_layers,
             rnn_type=rnn_type,
             per_step_net=per_step_net,
+            per_step_net2=per_step_net2,
+            per_step_net3=per_step_net3,
             rnn_kwargs=rnn_kwargs
         )
 
+    
+    
+    
+    
+    
+    
     def get_rnn_init_state(self, batch_size, device):
         """
         Get a default RNN state (zeros)
@@ -757,8 +825,8 @@ class RNN_MIMO_MLP(Module):
                 msg="RNN_MIMO_MLP: input_shape inconsistent in temporal dimension")
         # returns a dictionary instead of list since outputs are dictionaries
         return { k : [T] + list(self.output_shapes[k]) for k in self.output_shapes }
-
-    def forward(self, rnn_init_state=None, return_state=False, **inputs):
+ 
+    def forward(self, rnn_init_state=None, return_state=True, return_mode_way = True, **inputs):
         """
         Args:
             inputs (dict): a dictionary of dictionaries with one dictionary per
@@ -790,20 +858,24 @@ class RNN_MIMO_MLP(Module):
             return self.nets["rnn"].forward(inputs=rnn_inputs, rnn_init_state=rnn_init_state, return_state=return_state)
         
         # apply MLP + decoder to last RNN output
-        outputs = self.nets["rnn"].forward(inputs=rnn_inputs, rnn_init_state=rnn_init_state, return_state=return_state)
+        outputs = self.nets["rnn"].forward(inputs=rnn_inputs, rnn_init_state=rnn_init_state, return_state=True)
         if return_state:
             outputs, rnn_state = outputs
 
         assert outputs.ndim == 3 # [B, T, D]
+        modes = self.nets["modes"](outputs[:, -1])
+        waypoints = self.nets["decoder2"](self.nets["waypoints"](outputs[:, -1]))
         if self._has_mlp:
             outputs = self.nets["decoder"](self.nets["mlp"](outputs[:, -1]))
         else:
             outputs = self.nets["decoder"](outputs[:, -1])
+        
+        
+        if return_mode_way:
+            return outputs, rnn_state, modes, waypoints
 
-        if return_state:
-            return outputs, rnn_state
-        return outputs
-
+      
+        
     def forward_step(self, rnn_state, **inputs):
         """
         Unroll network over a single timestep.
@@ -825,15 +897,17 @@ class RNN_MIMO_MLP(Module):
         assert np.all([inputs[k].ndim - 1 == len(self.input_shapes[k]) for k in self.input_shapes])
 
         inputs = TensorUtils.to_sequence(inputs)
-        outputs, rnn_state = self.forward(
+        outputs, rnn_state, modes, waypoints = self.forward(
             inputs, 
             rnn_init_state=rnn_state,
-            return_state=True,
+            return_state=True, return_mode_way=True
         )
         if self.per_step:
             # if outputs are not per-step, the time dimension is already reduced
             outputs = outputs[:, 0]
-        return outputs, rnn_state
+            modes = modes[:, 0]
+            waypoints = waypoints[:, 0]
+        return outputs, rnn_state, modes, waypoints
 
     def _to_string(self):
         """

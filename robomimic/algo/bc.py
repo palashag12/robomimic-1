@@ -6,7 +6,7 @@ from collections import OrderedDict
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
+from pyquaternion import Quaternion
 import robomimic.models.base_nets as BaseNets
 import robomimic.models.obs_nets as ObsNets
 import robomimic.models.policy_nets as PolicyNets
@@ -15,6 +15,7 @@ import robomimic.utils.loss_utils as LossUtils
 import robomimic.utils.tensor_utils as TensorUtils
 import robomimic.utils.torch_utils as TorchUtils
 import robomimic.utils.obs_utils as ObsUtils
+import numpy as np
 
 from robomimic.algo import register_algo_factory_func, PolicyAlgo
 
@@ -475,7 +476,10 @@ class BC_RNN(BC):
         self._rnn_horizon = self.algo_config.rnn.horizon
         self._rnn_counter = 0
         self._rnn_is_open_loop = self.algo_config.rnn.get("open_loop", False)
-
+        self.timec = 0
+        self.wmode = False
+        self.P1 = 4
+        self.P2 = 4
         self.nets = self.nets.float().to(self.device)
 
     def process_batch_for_training(self, batch):
@@ -495,6 +499,8 @@ class BC_RNN(BC):
         input_batch["obs"] = batch["obs"]
         input_batch["goal_obs"] = batch.get("goal_obs", None) # goals may not be present
         input_batch["actions"] = batch["actions"]
+        input_batch["waypoints"] = batch["waypoints"]
+        input_batch["modes_dense"] = batch["modes_dense"]
 
         if self._rnn_is_open_loop:
             # replace the observation sequence with one that only consists of the first observation.
@@ -505,6 +511,61 @@ class BC_RNN(BC):
             input_batch["obs"] = TensorUtils.unsqueeze_expand_at(obs_seq_start, size=n_steps, dim=1)
 
         return TensorUtils.to_device(TensorUtils.to_float(input_batch), self.device)
+    
+    def _forward_training(self, batch):
+        """
+        Internal helper function for BC algo class. Compute forward pass
+        and return network outputs in @predictions dict.
+
+        Args:
+            batch (dict): dictionary with torch.Tensors sampled
+                from a data loader and filtered by @process_batch_for_training
+
+        Returns:
+            predictions (dict): dictionary containing network outputs
+        """
+        predictions = OrderedDict()
+        actions, states, modes, waypoints = self.nets["policy"](obs_dict=batch["obs"], goal_dict=batch["goal_obs"])
+        predictions["actions"] = actions
+        predictions["modes"] = modes
+        predictions["waypoints"] = waypoints
+        return predictions
+
+    def _compute_losses(self, predictions, batch):
+        """
+        Internal helper function for BC algo class. Compute losses based on
+        network outputs in @predictions dict, using reference labels in @batch.
+
+        Args:
+            predictions (dict): dictionary containing network outputs, from @_forward_training
+            batch (dict): dictionary with torch.Tensors sampled
+                from a data loader and filtered by @process_batch_for_training
+
+        Returns:
+            losses (dict): dictionary of losses computed over the batch
+        """
+        losses = OrderedDict()
+        a_target = batch["actions"]
+        m_target = batch["modes_dense"]
+        w_target = batch["waypoints"]
+        actions = predictions["actions"]
+        modes = predictions["modes"]
+        waypoints = predictions["waypoints"]
+        losses["l2_loss"] = nn.MSELoss()(actions, a_target) + nn.MSELoss()(waypoints, w_target)
+        losses["C_loss"] = nn.CrossEntropyLoss(modes, m_target)
+        losses["l1_loss"] = nn.SmoothL1Loss()(actions, a_target)
+        # cosine direction loss on eef delta position
+        losses["cos_loss"] = LossUtils.cosine_loss(actions[..., :3], a_target[..., :3])
+
+        action_losses = [
+            self.algo_config.loss.l2_weight * losses["l2_loss"],
+            self.algo_config.loss.l1_weight * losses["l1_loss"],
+            self.algo_config.loss.cos_weight * losses["cos_loss"],
+            0.1 * losses["C_loss"]
+        ]
+        action_loss = sum(action_losses)
+        losses["action_loss"] = action_loss
+        return losses
 
     def get_action(self, obs_dict, goal_dict=None):
         """
@@ -549,7 +610,13 @@ class BC_RNN(BC):
 class BC_RNN_GMM(BC_RNN):
     """
     BC training with an RNN GMM policy.
+    
     """
+    w_mode = False
+    tstep_count = 0
+    p1 = 4
+    p2 = 1
+    
     def _create_networks(self):
         """
         Creates networks and places them into @self.nets.
@@ -590,7 +657,7 @@ class BC_RNN_GMM(BC_RNN):
         Returns:
             predictions (dict): dictionary containing network outputs
         """
-        dists = self.nets["policy"].forward_train(
+        dists, state, mode, dists2 = self.nets["policy"].forward_train(
             obs_dict=batch["obs"], 
             goal_dict=batch["goal_obs"],
         )
@@ -598,11 +665,12 @@ class BC_RNN_GMM(BC_RNN):
         # make sure that this is a batch of multivariate action distributions, so that
         # the log probability computation will be correct
         assert len(dists.batch_shape) == 2 # [B, T]
-        log_probs = dists.log_prob(batch["actions"])
+        log_probs = 0.5 * dists.log_prob(batch["actions"]) + 0.5 * dists.log_prob(batch["waypoints"])
 
         predictions = OrderedDict(
             log_probs=log_probs,
         )
+        predictions["modes"] = mode
         return predictions
 
     def _compute_losses(self, predictions, batch):
@@ -620,10 +688,13 @@ class BC_RNN_GMM(BC_RNN):
         """
 
         # loss is just negative log-likelihood of action targets
-        action_loss = -predictions["log_probs"].mean()
+        action_loss = -predictions["log_probs"].mean() 
+        lossfn = nn.NLLLoss()
+
         return OrderedDict(
             log_probs=-action_loss,
-            action_loss=action_loss,
+            action_loss=action_loss + 0.1 * F.binary_cross_entropy(predictions["modes"].squeeze(dim=1), batch["modes_dense"], reduction='mean')
+
         )
 
     def log_info(self, info):
@@ -643,3 +714,95 @@ class BC_RNN_GMM(BC_RNN):
         if "policy_grad_norms" in info:
             log["Policy_Grad_Norms"] = info["policy_grad_norms"]
         return log
+    def get_action(self, obs_dict, goal_dict=None):
+        """
+        Get policy action outputs.
+
+        Args:
+            obs_dict (dict): current observation
+            goal_dict (dict): (optional) goal
+
+        Returns:
+            action (torch.Tensor): action tensor
+        """
+        assert not self.nets.training
+        if self.w_mode is False:
+            if self._rnn_hidden_state is None or self._rnn_counter % self._rnn_horizon == 0:
+                batch_size = list(obs_dict.values())[0].shape[0]
+                self._rnn_hidden_state = self.nets["policy"].get_rnn_init_state(batch_size=batch_size, device=self.device)
+
+                if self._rnn_is_open_loop:
+                    # remember the initial observation, and use it instead of the current observation
+                    # for open-loop action sequence prediction
+                    self._open_loop_obs = TensorUtils.clone(TensorUtils.detach(obs_dict))
+
+            obs_to_use = obs_dict
+            if self._rnn_is_open_loop:
+                # replace current obs with last recorded obs
+                obs_to_use = self._open_loop_obs
+
+            self._rnn_counter += 1
+            action, self._rnn_hidden_state, mode, waypoint = self.nets["policy"].forward_step(
+                obs_to_use, goal_dict=goal_dict, rnn_state=self._rnn_hidden_state)
+           # print(obs_to_use)
+            if mode < 0.5:
+                self.w_mode = True
+                self.wpoint = waypoint
+                self.tstep_count = 1
+            return action    
+        else:
+            if self._rnn_hidden_state is None or self._rnn_counter % self._rnn_horizon == 0:
+                batch_size = list(obs_dict.values())[0].shape[0]
+                self._rnn_hidden_state = self.nets["policy"].get_rnn_init_state(batch_size=batch_size, device=self.device)
+
+                if self._rnn_is_open_loop:
+                    # remember the initial observation, and use it instead of the current observation
+                    # for open-loop action sequence prediction
+                    self._open_loop_obs = TensorUtils.clone(TensorUtils.detach(obs_dict))
+
+            obs_to_use = obs_dict
+            
+            if self._rnn_is_open_loop:
+                # replace current obs with last recorded obs
+                obs_to_use = self._open_loop_obs
+
+            self._rnn_counter += 1
+            action, self._rnn_hidden_state, mode, waypoint = self.nets["policy"].forward_step(
+                obs_to_use, goal_dict=goal_dict, rnn_state=self._rnn_hidden_state)
+            if self.tstep_count < 100:
+                self.tstep_count += 1
+                
+                print("WAAAAAAAAAAAAYPPPPPOINT")
+                print(self.wpoint)
+                waypoint_c = self.wpoint.cpu()
+                goal_cart = waypoint[0][:3]
+                current_cart = obs_to_use['robot0_eef_pos'][0]
+                obs2 = obs_to_use['robot0_eef_quat'].cpu()
+                q1 = Quaternion(np.array(waypoint_c[0][3:]))
+                q2 = Quaternion(np.array(obs2[0]))
+                q3 = q1 - q2
+                axis = q3.axis
+                angle = abs(q3.angle)
+                print("ANGLEEEEE")
+                print(angle)
+                gain2 = angle*self.p2
+                action1 = (goal_cart - current_cart)*self.p1
+                print("EEEEEEEEEEFDIFFFF")
+                print(goal_cart - current_cart)
+                action2 = axis*gain2
+                action[0][0] = action1[0]
+                action[0][1] = action1[1]
+                action[0][2] = action1[2]
+                action[0][3] = action2[0]
+                action[0][4] = action2[1]
+                action[0][5] = action2[2]
+                
+
+
+                print("OBBSERVATION")
+                print(obs_to_use["robot0_eef_pos"])
+                print(obs_to_use["robot0_eef_quat"])
+            else:
+                self.w_mode = False
+
+            return action

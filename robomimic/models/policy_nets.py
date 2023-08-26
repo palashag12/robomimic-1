@@ -662,7 +662,7 @@ class RNNActorNetwork(RNN_MIMO_MLP):
                 msg="RNNActorNetwork: input_shape inconsistent in temporal dimension")
         return [T, self.ac_dim]
 
-    def forward(self, obs_dict, goal_dict=None, rnn_init_state=None, return_state=False):
+    def forward(self, obs_dict, goal_dict=None, rnn_init_state=None, return_state=False, return_mode_way = True):
         """
         Forward a sequence of inputs through the RNN and the per-step network.
 
@@ -684,9 +684,11 @@ class RNNActorNetwork(RNN_MIMO_MLP):
             goal_dict = TensorUtils.unsqueeze_expand_at(goal_dict, size=obs_dict[mod].shape[1], dim=1)
 
         outputs = super(RNNActorNetwork, self).forward(
-            obs=obs_dict, goal=goal_dict, rnn_init_state=rnn_init_state, return_state=return_state)
+            obs=obs_dict, goal=goal_dict, rnn_init_state=rnn_init_state, return_mode_way = True, return_state=return_state)
+        if return_mode_way:
+            actions, state, modes, waypoints = outputs
 
-        if return_state:
+        elif return_state:
             actions, state = outputs
         else:
             actions = outputs
@@ -694,8 +696,9 @@ class RNNActorNetwork(RNN_MIMO_MLP):
         
         # apply tanh squashing to ensure actions are in [-1, 1]
         actions = torch.tanh(actions["action"])
-
-        if return_state:
+        if return_mode_way:
+            return actions, state, modes, waypoints 
+        elif return_state:
             return actions, state
         else:
             return actions
@@ -715,9 +718,9 @@ class RNNActorNetwork(RNN_MIMO_MLP):
             state: updated rnn state
         """
         obs_dict = TensorUtils.to_sequence(obs_dict)
-        action, state = self.forward(
+        action, state, mode, waypoint = self.forward(
             obs_dict, goal_dict, rnn_init_state=rnn_state, return_state=True)
-        return action[:, 0], state
+        return action[:, 0], state, mode[:, 0], waypoint[:, 0]
 
     def _to_string(self):
         """Info to pretty print."""
@@ -826,8 +829,12 @@ class RNNGMMActorNetwork(RNNActorNetwork):
             scale=(self.num_modes, self.ac_dim), 
             logits=(self.num_modes,),
         )
+    
 
-    def forward_train(self, obs_dict, goal_dict=None, rnn_init_state=None, return_state=False):
+    
+    
+    
+    def forward_train(self, obs_dict, goal_dict=None, rnn_init_state=None, return_state=False, return_mode_way = True):
         """
         Return full GMM distribution, which is useful for computing
         quantities necessary at train-time, like log-likelihood, KL 
@@ -850,9 +857,11 @@ class RNNGMMActorNetwork(RNNActorNetwork):
             goal_dict = TensorUtils.unsqueeze_expand_at(goal_dict, size=obs_dict[mod].shape[1], dim=1)
 
         outputs = RNN_MIMO_MLP.forward(
-            self, obs=obs_dict, goal=goal_dict, rnn_init_state=rnn_init_state, return_state=return_state)
+            self, obs=obs_dict, goal=goal_dict, rnn_init_state=rnn_init_state)
 
-        if return_state:
+        if return_mode_way:
+            outputs, state, modes, waypoints = outputs  
+        elif return_state:
             outputs, state = outputs
         else:
             state = None
@@ -861,6 +870,10 @@ class RNNGMMActorNetwork(RNNActorNetwork):
         scales = outputs["scale"]
         logits = outputs["logits"]
 
+        means2 = waypoints["mean"]
+        scales2 = waypoints["scale"]
+        logits2 = waypoints["logits"]
+
         # apply tanh squashing to mean if not using tanh-GMM to ensure means are in [-1, 1]
         if not self.use_tanh:
             means = torch.tanh(means)
@@ -868,33 +881,43 @@ class RNNGMMActorNetwork(RNNActorNetwork):
         if self.low_noise_eval and (not self.training):
             # low-noise for all Gaussian dists
             scales = torch.ones_like(means) * 1e-4
+            scales2 = torch.ones_like(means2) * 1e-4
         else:
             # post-process the scale accordingly
             scales = self.activations[self.std_activation](scales) + self.min_std
+            scales2 = self.activations[self.std_activation](scales2) + self.min_std
 
         # mixture components - make sure that `batch_shape` for the distribution is equal
         # to (batch_size, timesteps, num_modes) since MixtureSameFamily expects this shape
         component_distribution = D.Normal(loc=means, scale=scales)
         component_distribution = D.Independent(component_distribution, 1) # shift action dim to event shape
+        component_distribution2 = D.Normal(loc=means2, scale=scales2)
+        component_distribution2 = D.Independent(component_distribution2, 1) # shift action dim to event shape
 
         # unnormalized logits to categorical distribution for mixing the modes
         mixture_distribution = D.Categorical(logits=logits)
-
+        mixture_distribution2 = D.Categorical(logits=logits2)
         dists = D.MixtureSameFamily(
             mixture_distribution=mixture_distribution,
             component_distribution=component_distribution,
+        )
+        dists2 = D.MixtureSameFamily(
+            mixture_distribution=mixture_distribution2,
+            component_distribution=component_distribution2,
         )
 
         if self.use_tanh:
             # Wrap distribution with Tanh
             dists = TanhWrappedDistribution(base_dist=dists, scale=1.)
 
-        if return_state:
+        if return_mode_way:
+            return dists, state, modes, dists2
+        elif return_state:
             return dists, state
         else:
             return dists
 
-    def forward(self, obs_dict, goal_dict=None, rnn_init_state=None, return_state=False):
+    def forward(self, obs_dict, goal_dict=None, rnn_init_state=None, return_state=False, return_mode_way = True):
         """
         Samples actions from the policy distribution.
 
@@ -906,10 +929,15 @@ class RNNGMMActorNetwork(RNNActorNetwork):
             action (torch.Tensor): batch of actions from policy distribution
         """
         out = self.forward_train(obs_dict=obs_dict, goal_dict=goal_dict, rnn_init_state=rnn_init_state, return_state=return_state)
-        if return_state:
+        if return_mode_way:
+            ad, state, mode, wd = out
+            return ad.sample(), state, mode, wd.sample()
+
+        elif return_state:
             ad, state = out
             return ad.sample(), state
-        return out.sample()
+        else:
+            return out.sample()
 
     def forward_train_step(self, obs_dict, goal_dict=None, rnn_state=None):
         """
@@ -928,24 +956,38 @@ class RNNGMMActorNetwork(RNNActorNetwork):
             state: updated rnn state
         """
         obs_dict = TensorUtils.to_sequence(obs_dict)
-        ad, state = self.forward_train(
-            obs_dict, goal_dict, rnn_init_state=rnn_state, return_state=True)
+        ad, state, mode, wd = self.forward_train(
+            obs_dict, goal_dict, rnn_init_state=rnn_state, return_state=False)
 
         # to squeeze time dimension, make another action distribution
         assert ad.component_distribution.base_dist.loc.shape[1] == 1
         assert ad.component_distribution.base_dist.scale.shape[1] == 1
         assert ad.mixture_distribution.logits.shape[1] == 1
+        assert wd.component_distribution.base_dist.loc.shape[1] == 1
+        assert wd.component_distribution.base_dist.scale.shape[1] == 1
+        assert wd.mixture_distribution.logits.shape[1] == 1
         component_distribution = D.Normal(
             loc=ad.component_distribution.base_dist.loc.squeeze(1),
             scale=ad.component_distribution.base_dist.scale.squeeze(1),
         )
+        component_distribution2 = D.Normal(
+            loc=wd.component_distribution2.base_dist.loc.squeeze(1),
+            scale=wd.component_distribution2.base_dist.scale.squeeze(1),
+        )
         component_distribution = D.Independent(component_distribution, 1)
+        component_distribution2 = D.Independent(component_distribution2, 1)
+
         mixture_distribution = D.Categorical(logits=ad.mixture_distribution.logits.squeeze(1))
+        mixture_distribution2 = D.Categorical(logits=wd.mixture_distribution.logits.squeeze(1))
         ad = D.MixtureSameFamily(
             mixture_distribution=mixture_distribution,
             component_distribution=component_distribution,
         )
-        return ad, state
+        wd = D.MixtureSameFamily(
+            mixture_distribution=mixture_distribution2,
+            component_distribution=component_distribution2,
+        )
+        return ad, state, mode, wd
 
     def forward_step(self, obs_dict, goal_dict=None, rnn_state=None):
         """
@@ -962,10 +1004,11 @@ class RNNGMMActorNetwork(RNNActorNetwork):
             state: updated rnn state
         """
         obs_dict = TensorUtils.to_sequence(obs_dict)
-        acts, state = self.forward(
-            obs_dict, goal_dict, rnn_init_state=rnn_state, return_state=True)
+        acts, state, mode, wpts = self.forward(
+            obs_dict, goal_dict, rnn_init_state=rnn_state, return_state=False)
         assert acts.shape[1] == 1
-        return acts[:, 0], state
+        assert wpts.shape[1] == 1
+        return acts[:, 0], state, mode, wpts[:, 0]
 
     def _to_string(self):
         """Info to pretty print."""
@@ -1167,9 +1210,6 @@ class VAEActor(Module):
 
             goal_dict (dict): a dictionary that maps modalities to torch.Tensor
                 batches. These should correspond to goal modalities.
-
-        Returns:
-            vae_outputs (dict): a dictionary that contains the following outputs.
 
                 encoder_params (dict): parameters for the posterior distribution
                     from the encoder forward pass

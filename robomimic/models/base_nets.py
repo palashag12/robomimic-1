@@ -271,6 +271,9 @@ class RNN_Base(Module):
         rnn_type="LSTM",  # [LSTM, GRU]
         rnn_kwargs=None,
         per_step_net=None,
+        per_step_net2=None,
+        per_step_net3= None
+        
     ):
         """
         Args:
@@ -288,6 +291,8 @@ class RNN_Base(Module):
         """
         super(RNN_Base, self).__init__()
         self.per_step_net = per_step_net
+        self.per_step_net2 = per_step_net2
+        self.per_step_net3 = per_step_net3
         if per_step_net is not None:
             assert isinstance(per_step_net, Module), "RNN_Base: per_step_net is not instance of Module"
 
@@ -356,7 +361,7 @@ class RNN_Base(Module):
             out = [input_shape[0], self._num_layers * self._hidden_dim]
         return out
 
-    def forward(self, inputs, rnn_init_state=None, return_state=False):
+    def forward(self, inputs, rnn_init_state=None, return_mode_way = True, return_state=False):
         """
         Forward a sequence of inputs through the RNN and the per-step network.
 
@@ -379,9 +384,15 @@ class RNN_Base(Module):
 
         outputs, rnn_state = self.nets(inputs, rnn_init_state)
         if self.per_step_net is not None:
+            waypoints = TensorUtils.time_distributed(outputs, self.per_step_net2)
+            modes = TensorUtils.time_distributed(outputs, self.per_step_net3)
             outputs = TensorUtils.time_distributed(outputs, self.per_step_net)
+             
 
-        if return_state:
+        if return_mode_way:
+            return outputs, rnn_state, modes, waypoints
+
+        elif return_state:
             return outputs, rnn_state
         else:
             return outputs
