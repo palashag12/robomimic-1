@@ -16,7 +16,7 @@ import robomimic.utils.tensor_utils as TensorUtils
 import robomimic.utils.torch_utils as TorchUtils
 import robomimic.utils.obs_utils as ObsUtils
 import numpy as np
-
+import math
 from robomimic.algo import register_algo_factory_func, PolicyAlgo
 
 
@@ -614,8 +614,8 @@ class BC_RNN_GMM(BC_RNN):
     """
     w_mode = False
     tstep_count = 0
-    p1 = 4
-    p2 = 1
+    p1 = 0.1
+    p2 = 0.2
     
     def _create_networks(self):
         """
@@ -714,6 +714,43 @@ class BC_RNN_GMM(BC_RNN):
         if "policy_grad_norms" in info:
             log["Policy_Grad_Norms"] = info["policy_grad_norms"]
         return log
+    def quat2axisangle(self, quat):
+        """
+        Converts quaternion to axis-angle format.
+        Returns a unit vector direction scaled by its angle in radians.
+
+        Args:
+            quat (np.array): (x,y,z,w) vec4 float angles
+
+        Returns:
+            np.array: (ax,ay,az) axis-angle exponential coordinates
+        """
+        # clip quaternion
+        if quat[3] > 1.:
+            quat[3] = 1.
+        elif quat[3] < -1.:
+            quat[3] = -1.
+
+        den = np.sqrt(1. - quat[3] * quat[3])
+        if math.isclose(den, 0.):
+            # This is (close to) a zero degree rotation, immediately return
+            return np.zeros(3)
+
+        return (quat[:3] * 2. * math.acos(quat[3])) / den
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
     def get_action(self, obs_dict, goal_dict=None):
         """
         Get policy action outputs.
@@ -749,6 +786,7 @@ class BC_RNN_GMM(BC_RNN):
                 self.w_mode = True
                 self.wpoint = waypoint
                 self.tstep_count = 1
+                self.paction = action
             return action    
         else:
             if self._rnn_hidden_state is None or self._rnn_counter % self._rnn_horizon == 0:
@@ -769,40 +807,82 @@ class BC_RNN_GMM(BC_RNN):
             self._rnn_counter += 1
             action, self._rnn_hidden_state, mode, waypoint = self.nets["policy"].forward_step(
                 obs_to_use, goal_dict=goal_dict, rnn_state=self._rnn_hidden_state)
-            if self.tstep_count < 100:
-                self.tstep_count += 1
+            if self.tstep_count < 40:
                 
-                print("WAAAAAAAAAAAAYPPPPPOINT")
-                print(self.wpoint)
+                
+               # print("WAAAAAAAAAAAAYPPPPPOINT")
+               # print(self.wpoint)
+                if self.tstep_count == 1:
+                    print(" I AM HERE")
+                    self.wpoint[0][0] = obs_to_use['robot0_eef_pos'][0][0] + 0.04
+                    self.wpoint[0][1] = obs_to_use['robot0_eef_pos'][0][1] + 0.04
+                    self.wpoint[0][2] = obs_to_use['robot0_eef_pos'][0][2] + 0.04
+                    self.start_pos = obs_to_use['robot0_eef_pos'][0].cpu()
+                self.tstep_count += 1
                 waypoint_c = self.wpoint.cpu()
-                goal_cart = waypoint[0][:3]
-                current_cart = obs_to_use['robot0_eef_pos'][0]
-                obs2 = obs_to_use['robot0_eef_quat'].cpu()
-                q1 = Quaternion(np.array(waypoint_c[0][3:]))
-                q2 = Quaternion(np.array(obs2[0]))
-                q3 = q1 - q2
-                axis = q3.axis
-                angle = abs(q3.angle)
-                print("ANGLEEEEE")
-                print(angle)
-                gain2 = angle*self.p2
-                action1 = (goal_cart - current_cart)*self.p1
-                print("EEEEEEEEEEFDIFFFF")
-                print(goal_cart - current_cart)
+                value = 0.05  # Replace with the value you want
+                offset = torch.tensor([value, value, value])
+                
+                goal_cart = waypoint_c[0][:3]
+                current_cart = obs_to_use['robot0_eef_pos'][0].cpu()
+                obs2 = obs_to_use['robot0_eef_quat'][0].cpu()
+                q1 = Quaternion(np.array([waypoint_c[0][6], waypoint_c[0][3], waypoint_c[0][4], waypoint_c[0][5]]))
+                
+
+                q2 = Quaternion(np.array([obs2[3], obs2[0], obs2[1], obs2[2]]))
+                q3 = q1/q2
+                elems = q3.elements
+                q4 = np.array([elems[1], elems[2], elems[3], elems[0]])
+                axis = self.quat2axisangle(q4)
+                #print("AXXISSS")
+                #print(axis)
+
+                angle = q3.angle
+               # print("ANGLEEEEE")
+               # print(q3.angle)
+               # print(angle)
+             #   print(goal_cart.shape)
+             #   print(current_cart.shape)
+                
+                goal_cart = current_cart + offset
+                action1 = (goal_cart - current_cart)*self.p1*-1
+                #print("EEEEEEEEEEFDIFFFF")
+                #print(goal_cart - current_cart)
+                #print("ACTION1")
+                #print(action1)
+                gain2 = 3
                 action2 = axis*gain2
+                #if self.tstep_count % 20 == 0:
+                
                 action[0][0] = action1[0]
                 action[0][1] = action1[1]
                 action[0][2] = action1[2]
-                action[0][3] = action2[0]
-                action[0][4] = action2[1]
-                action[0][5] = action2[2]
+                   # action[0][3] = action2[0]
+                   # action[0][4] = action2[1]
+                   # action[0][5] = action2[2]
+                self.paction = action
                 
 
 
+            #    print("OBBSERVATION")
+            #    print(obs_to_use["robot0_eef_pos"])
+            #    print(obs_to_use["robot0_eef_quat"])
+                #    print(action1)
+                #    print(action)
+                return action
+               # else:
+               #     return self.paction
+                    
+
+            
+            else:
+                print("FINISH")
+                print(self.wpoint)
+                print("START")
+                print(self.start_pos)
                 print("OBBSERVATION")
                 print(obs_to_use["robot0_eef_pos"])
                 print(obs_to_use["robot0_eef_quat"])
-            else:
                 self.w_mode = False
 
             return action
