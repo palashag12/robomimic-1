@@ -653,6 +653,7 @@ class RNN_MIMO_MLP(Module):
         self,
         input_obs_group_shapes,
         output_shapes,
+        
         mlp_layer_dims,
         rnn_hidden_dim,
         rnn_num_layers,
@@ -662,6 +663,7 @@ class RNN_MIMO_MLP(Module):
         mlp_layer_func=nn.Linear,
         per_step=True,
         encoder_kwargs=None,
+        output_shapes_b = None,
     ):
         """
         Args:
@@ -708,6 +710,8 @@ class RNN_MIMO_MLP(Module):
         assert isinstance(output_shapes, OrderedDict)
         self.input_obs_group_shapes = input_obs_group_shapes
         self.output_shapes = output_shapes
+        self.output_shapes_b = output_shapes_b
+
         self.per_step = per_step
 
         self.nets = nn.ModuleDict()
@@ -757,7 +761,7 @@ class RNN_MIMO_MLP(Module):
                 input_feat_dim=mlp_layer_dims[-1],
             )
             self.nets["decoder2"] = ObservationDecoder(
-                decode_shapes=self.output_shapes,
+                decode_shapes=self.output_shapes_b,
                 input_feat_dim=mlp_layer_dims[-1],
             )
             if self.per_step:

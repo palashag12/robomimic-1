@@ -631,6 +631,7 @@ class RNNActorNetwork(RNN_MIMO_MLP):
             self.goal_shapes = OrderedDict()
 
         output_shapes = self._get_output_shapes()
+        output_shapes_b = self._get_output_shapes_b()
         super(RNNActorNetwork, self).__init__(
             input_obs_group_shapes=observation_group_shapes,
             output_shapes=output_shapes,
@@ -643,9 +644,17 @@ class RNNActorNetwork(RNN_MIMO_MLP):
             rnn_kwargs=rnn_kwargs,
             per_step=True,
             encoder_kwargs=encoder_kwargs,
+            output_shapes_b = output_shapes_b
         )
 
     def _get_output_shapes(self):
+        """
+        Allow subclasses to re-define outputs from @RNN_MIMO_MLP, since we won't
+        always directly predict actions, but may instead predict the parameters
+        of a action distribution.
+        """
+        return OrderedDict(action=(self.ac_dim,))
+    def _get_output_shapes_b(self):
         """
         Allow subclasses to re-define outputs from @RNN_MIMO_MLP, since we won't
         always directly predict actions, but may instead predict the parameters
@@ -829,7 +838,16 @@ class RNNGMMActorNetwork(RNNActorNetwork):
             scale=(self.num_modes, self.ac_dim), 
             logits=(self.num_modes,),
         )
-    
+    def _get_output_shapes_b(self):
+        """
+        Tells @MIMO_MLP superclass about the output dictionary that should be generated
+        at the last layer. Network outputs parameters of GMM distribution.
+        """
+        return OrderedDict(
+            mean=(2, self.ac_dim), 
+            scale=(2, self.ac_dim), 
+            logits=(2,),
+        )
 
     
     

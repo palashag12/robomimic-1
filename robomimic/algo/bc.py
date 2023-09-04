@@ -614,7 +614,7 @@ class BC_RNN_GMM(BC_RNN):
     """
     w_mode = False
     tstep_count = 0
-    p1 = 0.1
+    p1 = 1.5
     p2 = 0.2
     
     def _create_networks(self):
@@ -744,7 +744,16 @@ class BC_RNN_GMM(BC_RNN):
     
     
     
-    
+    def reset(self):
+        """
+        Reset algo state to prepare for environment rollouts.
+        """
+        self._rnn_hidden_state = None
+        self._rnn_counter = 0
+        self.w_mode = False
+        self.tstep_count = 0
+        self.p1 = 1.5
+        self.p2 = 0.2
     
     
     
@@ -787,6 +796,13 @@ class BC_RNN_GMM(BC_RNN):
                 self.wpoint = waypoint
                 self.tstep_count = 1
                 self.paction = action
+                action[0][0] = 0
+                action[0][1] = 0
+                action[0][2] = 0
+                action[0][3] = 0
+                action[0][4] = 0
+                action[0][5] = 0
+                action[0][6] = -1
             return action    
         else:
             if self._rnn_hidden_state is None or self._rnn_counter % self._rnn_horizon == 0:
@@ -807,21 +823,21 @@ class BC_RNN_GMM(BC_RNN):
             self._rnn_counter += 1
             action, self._rnn_hidden_state, mode, waypoint = self.nets["policy"].forward_step(
                 obs_to_use, goal_dict=goal_dict, rnn_state=self._rnn_hidden_state)
-            if self.tstep_count < 40:
+            if self.tstep_count < 100:
+                
                 
                 
                # print("WAAAAAAAAAAAAYPPPPPOINT")
                # print(self.wpoint)
                 if self.tstep_count == 1:
                     print(" I AM HERE")
-                    self.wpoint[0][0] = obs_to_use['robot0_eef_pos'][0][0] + 0.04
-                    self.wpoint[0][1] = obs_to_use['robot0_eef_pos'][0][1] + 0.04
-                    self.wpoint[0][2] = obs_to_use['robot0_eef_pos'][0][2] + 0.04
+
                     self.start_pos = obs_to_use['robot0_eef_pos'][0].cpu()
+                    print("START CHECK")
+                    print(self.start_pos)
+                    
                 self.tstep_count += 1
                 waypoint_c = self.wpoint.cpu()
-                value = 0.05  # Replace with the value you want
-                offset = torch.tensor([value, value, value])
                 
                 goal_cart = waypoint_c[0][:3]
                 current_cart = obs_to_use['robot0_eef_pos'][0].cpu()
@@ -844,10 +860,13 @@ class BC_RNN_GMM(BC_RNN):
              #   print(goal_cart.shape)
              #   print(current_cart.shape)
                 
-                goal_cart = current_cart + offset
-                action1 = (goal_cart - current_cart)*self.p1*-1
+                #goal_cart = current_cart + offset
+                action1 = (goal_cart - current_cart)*self.p1
                 #print("EEEEEEEEEEFDIFFFF")
                 #print(goal_cart - current_cart)
+                if torch.norm(goal_cart - current_cart, p = 2) <= 0.01:
+                    self.w_mode = False
+                    print("SUCCESS")
                 #print("ACTION1")
                 #print(action1)
                 gain2 = 3
@@ -860,6 +879,10 @@ class BC_RNN_GMM(BC_RNN):
                    # action[0][3] = action2[0]
                    # action[0][4] = action2[1]
                    # action[0][5] = action2[2]
+                action[0][3] = 0
+                action[0][4] = 0
+                action[0][5] = 0
+                action[0][6] = 1
                 self.paction = action
                 
 
@@ -869,6 +892,7 @@ class BC_RNN_GMM(BC_RNN):
             #    print(obs_to_use["robot0_eef_quat"])
                 #    print(action1)
                 #    print(action)
+
                 return action
                # else:
                #     return self.paction
