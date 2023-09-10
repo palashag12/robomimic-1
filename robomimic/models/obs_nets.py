@@ -750,7 +750,7 @@ class RNN_MIMO_MLP(Module):
                 layer_func=mlp_layer_func
             )
             self.nets["waypoints"] = MLP(
-                input_dim=rnn_output_dim,
+                input_dim=rnn_input_dim,
                 output_dim= mlp_layer_dims[-1],
                 layer_dims= [200, 200, 200],
                 output_activation=mlp_activation,
