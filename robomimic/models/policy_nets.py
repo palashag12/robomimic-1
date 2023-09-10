@@ -695,6 +695,7 @@ class RNNActorNetwork(RNN_MIMO_MLP):
         outputs = super(RNNActorNetwork, self).forward(
             obs=obs_dict, goal=goal_dict, rnn_init_state=rnn_init_state, return_mode_way = True, return_state=return_state)
         if return_mode_way:
+
             actions, state, modes, waypoints = outputs
 
         elif return_state:
@@ -705,6 +706,9 @@ class RNNActorNetwork(RNN_MIMO_MLP):
         
         # apply tanh squashing to ensure actions are in [-1, 1]
         actions = torch.tanh(actions["action"])
+        print("WAYPOINTS")
+        print(waypoints)
+
         if return_mode_way:
             return actions, state, modes, waypoints 
         elif return_state:
@@ -895,6 +899,7 @@ class RNNGMMActorNetwork(RNNActorNetwork):
         # apply tanh squashing to mean if not using tanh-GMM to ensure means are in [-1, 1]
         if not self.use_tanh:
             means = torch.tanh(means)
+            means2 = torch.tanh(means2)
 
         if self.low_noise_eval and (not self.training):
             # low-noise for all Gaussian dists
@@ -927,6 +932,7 @@ class RNNGMMActorNetwork(RNNActorNetwork):
         if self.use_tanh:
             # Wrap distribution with Tanh
             dists = TanhWrappedDistribution(base_dist=dists, scale=1.)
+            dists2 = TanhWrappedDistribution(base_dist=dists2, scale=1.)
 
         if return_mode_way:
             return dists, state, modes, dists2

@@ -665,6 +665,10 @@ class BC_RNN_GMM(BC_RNN):
         # make sure that this is a batch of multivariate action distributions, so that
         # the log probability computation will be correct
         assert len(dists.batch_shape) == 2 # [B, T]
+
+        for i in range(100):
+            for j in range(10):
+                batch["waypoints"][i][j][2] = batch["waypoints"][i][j][2]/2
         log_probs = 0.5 * dists.log_prob(batch["actions"]) + 0.5 * dists.log_prob(batch["waypoints"])
 
         predictions = OrderedDict(
@@ -693,7 +697,7 @@ class BC_RNN_GMM(BC_RNN):
 
         return OrderedDict(
             log_probs=-action_loss,
-            action_loss=action_loss + 0.1 * F.binary_cross_entropy(predictions["modes"].squeeze(dim=1), batch["modes_dense"], reduction='mean')
+            action_loss=action_loss + 0.1 * F.binary_cross_entropy(predictions["modes"].squeeze(dim=2), batch["modes_dense"], reduction='mean')
 
         )
 
@@ -790,6 +794,7 @@ class BC_RNN_GMM(BC_RNN):
             self._rnn_counter += 1
             action, self._rnn_hidden_state, mode, waypoint = self.nets["policy"].forward_step(
                 obs_to_use, goal_dict=goal_dict, rnn_state=self._rnn_hidden_state)
+            waypoint[0][2] = waypoint[0][2] * 2
            # print(obs_to_use)
             if mode < 0.5:
                 self.w_mode = True
@@ -802,7 +807,7 @@ class BC_RNN_GMM(BC_RNN):
                 action[0][3] = 0
                 action[0][4] = 0
                 action[0][5] = 0
-                action[0][6] = -1
+                #action[0][6] = -1
             return action    
         else:
             if self._rnn_hidden_state is None or self._rnn_counter % self._rnn_horizon == 0:
@@ -823,6 +828,7 @@ class BC_RNN_GMM(BC_RNN):
             self._rnn_counter += 1
             action, self._rnn_hidden_state, mode, waypoint = self.nets["policy"].forward_step(
                 obs_to_use, goal_dict=goal_dict, rnn_state=self._rnn_hidden_state)
+            waypoint[0][2] = waypoint[0][2] * 2
             if self.tstep_count < 100:
                 
                 
@@ -853,7 +859,7 @@ class BC_RNN_GMM(BC_RNN):
                 #print("AXXISSS")
                 #print(axis)
 
-                angle = q3.angle
+                #angle = q3.angle
                # print("ANGLEEEEE")
                # print(q3.angle)
                # print(angle)
@@ -861,37 +867,36 @@ class BC_RNN_GMM(BC_RNN):
              #   print(current_cart.shape)
                 
                 #goal_cart = current_cart + offset
+                l2_norm = np.linalg.norm(axis)
+                axis2 = axis/l2_norm
                 action1 = (goal_cart - current_cart)*self.p1
                 #print("EEEEEEEEEEFDIFFFF")
                 #print(goal_cart - current_cart)
-                if torch.norm(goal_cart - current_cart, p = 2) <= 0.01:
+                if torch.norm(goal_cart - current_cart, p = 2) <= 0.04 and axis[0] == 0 and axis[1] == 0 and axis[2] == 0:
                     self.w_mode = False
                     print("SUCCESS")
                 #print("ACTION1")
                 #print(action1)
-                gain2 = 3
-                action2 = axis*gain2
+                
+                
+                action2 = axis2*self.p2*l2_norm
                 #if self.tstep_count % 20 == 0:
                 
                 action[0][0] = action1[0]
                 action[0][1] = action1[1]
                 action[0][2] = action1[2]
-                   # action[0][3] = action2[0]
-                   # action[0][4] = action2[1]
-                   # action[0][5] = action2[2]
-                action[0][3] = 0
-                action[0][4] = 0
-                action[0][5] = 0
-                action[0][6] = 1
+                action[0][3] = action2[0]
+                action[0][4] = action2[1]
+                action[0][5] = action2[2]
+                #action[0][3] = 0
+                #action[0][4] = 0
+                #action[0][5] = 0
+                #action[0][6] = 1
                 self.paction = action
                 
 
 
-            #    print("OBBSERVATION")
-            #    print(obs_to_use["robot0_eef_pos"])
-            #    print(obs_to_use["robot0_eef_quat"])
-                #    print(action1)
-                #    print(action)
+          
 
                 return action
                # else:
@@ -908,5 +913,11 @@ class BC_RNN_GMM(BC_RNN):
                 print(obs_to_use["robot0_eef_pos"])
                 print(obs_to_use["robot0_eef_quat"])
                 self.w_mode = False
+                #action[0][0] = action1[0]
+                #action[0][1] = action1[1]
+                #action[0][2] = action1[2]
+                #action[0][3] = action2[0]
+                #action[0][4] = action2[1]
+                #action[0][5] = action2[2]
 
             return action

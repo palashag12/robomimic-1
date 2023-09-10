@@ -764,6 +764,7 @@ class RNN_MIMO_MLP(Module):
                 decode_shapes=self.output_shapes_b,
                 input_feat_dim=mlp_layer_dims[-1],
             )
+            print("GOTCHU")
             if self.per_step:
                 print("HI")
                 per_step_net = Sequential(self.nets["mlp"], self.nets["decoder"])
