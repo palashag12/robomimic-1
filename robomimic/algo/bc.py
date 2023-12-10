@@ -1,6 +1,7 @@
 """
 Implementation of Behavioral Cloning (BC).
 """
+count = 0
 from collections import OrderedDict
 
 import torch
@@ -478,8 +479,8 @@ class BC_RNN(BC):
         self._rnn_is_open_loop = self.algo_config.rnn.get("open_loop", False)
         self.timec = 0
         self.wmode = False
-        self.P1 = 4
-        self.P2 = 4
+        self.P1 = 5
+        self.P2 = 5
         self.nets = self.nets.float().to(self.device)
 
     def process_batch_for_training(self, batch):
@@ -614,8 +615,8 @@ class BC_RNN_GMM(BC_RNN):
     """
     w_mode = False
     tstep_count = 0
-    p1 = 1.5
-    p2 = 0.2
+    p1 = 9.0
+    p2 = 9.0
     
     def _create_networks(self):
         """
@@ -645,6 +646,7 @@ class BC_RNN_GMM(BC_RNN):
 
         self.nets = self.nets.float().to(self.device)
 
+
     def _forward_training(self, batch):
         """
         Internal helper function for BC algo class. Compute forward pass
@@ -657,6 +659,8 @@ class BC_RNN_GMM(BC_RNN):
         Returns:
             predictions (dict): dictionary containing network outputs
         """
+        
+        
         dists, state, mode, dists2 = self.nets["policy"].forward_train(
             obs_dict=batch["obs"], 
             goal_dict=batch["goal_obs"],
@@ -665,15 +669,20 @@ class BC_RNN_GMM(BC_RNN):
         # make sure that this is a batch of multivariate action distributions, so that
         # the log probability computation will be correct
         assert len(dists.batch_shape) == 2 # [B, T]
-
+        print(len(dists2.batch_shape))
+        #Divide second dimension by 2
         for i in range(100):
-            for j in range(10):
+            for j in range(20):
                 batch["waypoints"][i][j][2] = batch["waypoints"][i][j][2]/2
-        log_probs = 0.5 * dists.log_prob(batch["actions"]) + 0.5 * dists.log_prob(batch["waypoints"])
-
+        tmp_b = batch["waypoints"][:, :-9, :].squeeze(1)
+        #log_probs = 0.5 * dists.log_prob(batch["actions"])
+        log_probs = 0.5 * dists.log_prob(batch["actions"]) 
+        log_probs_2 = 0.5 * dists2.log_prob(batch["waypoints"][:, :-19, :].squeeze(1))
         predictions = OrderedDict(
             log_probs=log_probs,
+            
         )
+        predictions["log_probs_2"] = 0.5 * dists2.log_prob(batch["waypoints"][:, :-19, :].squeeze(1))
         predictions["modes"] = mode
         return predictions
 
@@ -693,11 +702,12 @@ class BC_RNN_GMM(BC_RNN):
 
         # loss is just negative log-likelihood of action targets
         action_loss = -predictions["log_probs"].mean() 
+        action_loss = action_loss + (-predictions["log_probs_2"].mean()) + 0.1 * F.binary_cross_entropy(predictions["modes"].squeeze(dim=2), batch["modes_dense"], reduction='mean')
         lossfn = nn.NLLLoss()
 
         return OrderedDict(
             log_probs=-action_loss,
-            action_loss=action_loss + 0.1 * F.binary_cross_entropy(predictions["modes"].squeeze(dim=2), batch["modes_dense"], reduction='mean')
+            action_loss=action_loss
 
         )
 
@@ -756,8 +766,8 @@ class BC_RNN_GMM(BC_RNN):
         self._rnn_counter = 0
         self.w_mode = False
         self.tstep_count = 0
-        self.p1 = 1.5
-        self.p2 = 0.2
+        self.p1 = 9.0
+        self.p2 = 9.0
     
     
     
@@ -796,18 +806,22 @@ class BC_RNN_GMM(BC_RNN):
                 obs_to_use, goal_dict=goal_dict, rnn_state=self._rnn_hidden_state)
             waypoint[0][2] = waypoint[0][2] * 2
            # print(obs_to_use)
-            if mode < 0.5:
+           
+
+            if mode < 0.3:
+                print("ORIGIN")
                 self.w_mode = True
                 self.wpoint = waypoint
                 self.tstep_count = 1
                 self.paction = action
-                action[0][0] = 0
-                action[0][1] = 0
-                action[0][2] = 0
-                action[0][3] = 0
-                action[0][4] = 0
-                action[0][5] = 0
+                #action[0][0] = 0
+                #action[0][1] = 0
+                #action[0][2] = 0
+                #action[0][3] = 0
+                #action[0][4] = 0
+                #action[0][5] = 0
                 #action[0][6] = -1
+            print("DENSE")    
             return action    
         else:
             if self._rnn_hidden_state is None or self._rnn_counter % self._rnn_horizon == 0:
@@ -875,11 +889,12 @@ class BC_RNN_GMM(BC_RNN):
                 if torch.norm(goal_cart - current_cart, p = 2) <= 0.04 and axis[0] == 0 and axis[1] == 0 and axis[2] == 0:
                     self.w_mode = False
                     print("SUCCESS")
+                    return action
                 #print("ACTION1")
                 #print(action1)
                 
                 
-                action2 = axis2*self.p2*l2_norm
+                action2 = axis*self.p2
                 #if self.tstep_count % 20 == 0:
                 
                 action[0][0] = action1[0]

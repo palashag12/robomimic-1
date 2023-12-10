@@ -724,7 +724,8 @@ class RNN_MIMO_MLP(Module):
 
         # flat encoder output dimension
         rnn_input_dim = self.nets["encoder"].output_shape()[0]
-
+        #("RNN INPUT DIMENSION")
+       # print(rnn_input_dim)
         # bidirectional RNNs mean that the output of RNN will be twice the hidden dimension
         rnn_is_bidirectional = rnn_kwargs.get("bidirectional", False)
         num_directions = int(rnn_is_bidirectional) + 1 # 2 if bidirectional, 1 otherwise
@@ -752,7 +753,7 @@ class RNN_MIMO_MLP(Module):
             self.nets["waypoints"] = MLP(
                 input_dim=rnn_input_dim,
                 output_dim= mlp_layer_dims[-1],
-                layer_dims= [200, 200, 200],
+                layer_dims= [400, 400, 400],
                 output_activation=mlp_activation,
                 layer_func=mlp_layer_func
             )
@@ -764,11 +765,11 @@ class RNN_MIMO_MLP(Module):
                 decode_shapes=self.output_shapes_b,
                 input_feat_dim=mlp_layer_dims[-1],
             )
-            print("GOTCHU")
+            #print("GOTCHU")
             if self.per_step:
                 print("HI")
                 per_step_net = Sequential(self.nets["mlp"], self.nets["decoder"])
-                per_step_net2 = Sequential(self.nets["waypoints"], self.nets["decoder2"])
+                #per_step_net2 = Sequential(self.nets["waypoints"], self.nets["decoder2"])
                 per_step_net3 = self.nets["modes"]
         else:
             self.nets["decoder"] = ObservationDecoder(
@@ -850,7 +851,25 @@ class RNN_MIMO_MLP(Module):
                 for each tensor.
 
             rnn_state (torch.Tensor or tuple): return the new rnn state (if @return_state)
+
         """
+        enc_outputs = self.nets["encoder"](**inputs)
+        #hmm = enc_outputs[0][440]
+        #hmm = enc_outputs[0][44]
+        result_tensor = enc_outputs
+        if enc_outputs.size(1) != 53:
+            raw_obj = inputs['obs']['object'].view(inputs['obs']['object'].size()[0], -1)[:, :44]
+            raw_eefp = inputs['obs']['robot0_eef_pos'].view(inputs['obs']['robot0_eef_pos'].size()[0], -1)[:, :3]
+            raw_eefq = inputs['obs']['robot0_eef_quat'].view(inputs['obs']['robot0_eef_quat'].size()[0], -1)[:, :4]
+            raw_gpq = inputs['obs']['robot0_gripper_qpos'].view(inputs['obs']['robot0_gripper_qpos'].size()[0], -1)[:, :2]
+            result_tensor = torch.cat((raw_obj, raw_eefp), dim=1)
+            #result_tensor = result_tensor.sum(dim=1)
+            result_tensor = torch.cat((result_tensor, raw_eefq), dim=1)
+            #result_tensor = result_tensor.sum(dim=1)
+            result_tensor = torch.cat((result_tensor, raw_gpq), dim=1)
+            #result_tensor = result_tensor.sum(dim=1)
+    # Print the shape of the resulting tensor
+          
         for obs_group in self.input_obs_group_shapes:
             for k in self.input_obs_group_shapes[obs_group]:
                 # first two dimensions should be [B, T] for inputs
@@ -859,8 +878,9 @@ class RNN_MIMO_MLP(Module):
         # use encoder to extract flat rnn inputs
         rnn_inputs = TensorUtils.time_distributed(inputs, self.nets["encoder"], inputs_as_kwargs=True)
         assert rnn_inputs.ndim == 3  # [B, T, D]
+        waypoints = self.nets["decoder2"](self.nets["waypoints"](result_tensor))
         if self.per_step:
-            return self.nets["rnn"].forward(inputs=rnn_inputs, rnn_init_state=rnn_init_state, return_state=return_state)
+            return self.nets["rnn"].forward(inputs=rnn_inputs, rnn_init_state=rnn_init_state, return_state=return_state), waypoints
         
         # apply MLP + decoder to last RNN output
         outputs = self.nets["rnn"].forward(inputs=rnn_inputs, rnn_init_state=rnn_init_state, return_state=True)
@@ -869,7 +889,7 @@ class RNN_MIMO_MLP(Module):
 
         assert outputs.ndim == 3 # [B, T, D]
         modes = self.nets["modes"](outputs[:, -1])
-        waypoints = self.nets["decoder2"](self.nets["waypoints"](outputs[:, -1]))
+        
         if self._has_mlp:
             outputs = self.nets["decoder"](self.nets["mlp"](outputs[:, -1]))
         else:
@@ -911,7 +931,7 @@ class RNN_MIMO_MLP(Module):
             # if outputs are not per-step, the time dimension is already reduced
             outputs = outputs[:, 0]
             modes = modes[:, 0]
-            waypoints = waypoints[:, 0]
+            
         return outputs, rnn_state, modes, waypoints
 
     def _to_string(self):

@@ -794,7 +794,7 @@ class RNNGMMActorNetwork(RNNActorNetwork):
                 obs_modality1: dict
                     feature_dimension: int
                     core_class: str
-                    core_kwargs: dict
+                    core_kwargs: GMMdict
                         ...
                         ...
                     obs_randomizer_class: str
@@ -882,7 +882,8 @@ class RNNGMMActorNetwork(RNNActorNetwork):
             self, obs=obs_dict, goal=goal_dict, rnn_init_state=rnn_init_state)
 
         if return_mode_way:
-            outputs, state, modes, waypoints = outputs  
+            outputs, waypoints = outputs  
+            outputs, state, modes = outputs
         elif return_state:
             outputs, state = outputs
         else:
@@ -1030,9 +1031,14 @@ class RNNGMMActorNetwork(RNNActorNetwork):
         obs_dict = TensorUtils.to_sequence(obs_dict)
         acts, state, mode, wpts = self.forward(
             obs_dict, goal_dict, rnn_init_state=rnn_state, return_state=False)
+        #print(acts)
         assert acts.shape[1] == 1
-        assert wpts.shape[1] == 1
-        return acts[:, 0], state, mode, wpts[:, 0]
+        #print("TTHE SHAPES")
+        #print(acts[:, 0].shape)
+        #print(wpts.shape)
+        #assert wpts.shape[1] == 1
+        #return acts[:, 0], state, mode, wpts[:, 0]
+        return acts[:, 0], state, mode, wpts
 
     def _to_string(self):
         """Info to pretty print."""

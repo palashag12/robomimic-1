@@ -384,13 +384,13 @@ class RNN_Base(Module):
 
         outputs, rnn_state = self.nets(inputs, rnn_init_state)
         if self.per_step_net is not None:
-            waypoints = TensorUtils.time_distributed(outputs, self.per_step_net2)
+            #waypoints = TensorUtils.time_distributed(outputs, self.per_step_net2)
             modes = TensorUtils.time_distributed(outputs, self.per_step_net3)
             outputs = TensorUtils.time_distributed(outputs, self.per_step_net)
              
 
         if return_mode_way:
-            return outputs, rnn_state, modes, waypoints
+            return outputs, rnn_state, modes
 
         elif return_state:
             return outputs, rnn_state

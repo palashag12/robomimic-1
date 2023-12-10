@@ -23,7 +23,7 @@ import robomimic.utils.log_utils as LogUtils
 from robomimic.utils.dataset import SequenceDataset
 from robomimic.envs.env_base import EnvBase
 from robomimic.algo import RolloutPolicy
-
+from PIL import Image, ImageDraw
 
 def get_exp_dir(config, auto_remove_exp_dir=False):
     """
@@ -153,7 +153,23 @@ def dataset_factory(config, obs_keys, filter_by_attribute=None, dataset_path=Non
     dataset = SequenceDataset(**ds_kwargs)
 
     return dataset
+def mark_image_in_array(input_array, box_coordinates, outline="red"):
+    # Convert the input array to a PIL Image
+    image = Image.fromarray(np.uint8(input_array), 'RGB')
 
+    # Create a drawing object
+    draw = ImageDraw.Draw(image)
+
+    # Define the coordinates of the bounding box (left, top, right, bottom)
+    left, top, right, bottom = box_coordinates
+
+    # Draw a red bounding box
+    draw.rectangle([left, top, right, bottom], outline, width=3)
+
+    # Convert the modified image back to a NumPy array
+    marked_array = np.array(image)
+
+    return marked_array
 
 def run_rollout(
         policy, 
@@ -230,7 +246,11 @@ def run_rollout(
             if video_writer is not None:
                 if video_count % video_skip == 0:
                     video_img = env.render(mode="rgb_array", height=512, width=512)
-                    video_writer.append_data(video_img)
+                    box_coordinates = (50, 50, 200, 200)
+                    if policy.policy.w_mode is True:
+                        video_writer.append_data(mark_image_in_array(video_img, box_coordinates, outline = "green"))
+                    else:
+                        video_writer.append_data(mark_image_in_array(video_img, box_coordinates, outline = "red"))    
 
                 video_count += 1
 

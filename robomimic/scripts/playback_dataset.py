@@ -67,6 +67,7 @@ import robomimic.utils.obs_utils as ObsUtils
 import robomimic.utils.env_utils as EnvUtils
 import robomimic.utils.file_utils as FileUtils
 from robomimic.envs.env_base import EnvBase, EnvType
+from PIL import Image, ImageDraw
 
 
 # Define default cameras to use for each env type
@@ -75,6 +76,23 @@ DEFAULT_CAMERAS = {
     EnvType.IG_MOMART_TYPE: ["rgb"],
     EnvType.GYM_TYPE: ValueError("No camera names supported for gym type env!"),
 }
+def mark_image_in_array(input_array, box_coordinates, outline="red"):
+    # Convert the input array to a PIL Image
+    image = Image.fromarray(np.uint8(input_array), 'RGB')
+
+    # Create a drawing object
+    draw = ImageDraw.Draw(image)
+
+    # Define the coordinates of the bounding box (left, top, right, bottom)
+    left, top, right, bottom = box_coordinates
+
+    # Draw a red bounding box
+    draw.rectangle([left, top, right, bottom], outline, width=3)
+
+    # Convert the modified image back to a NumPy array
+    marked_array = np.array(image)
+
+    return marked_array
 
 
 def playback_trajectory_with_env(
@@ -87,6 +105,7 @@ def playback_trajectory_with_env(
     video_skip=5, 
     camera_names=None,
     first=False,
+    modes_dense = None
 ):
     """
     Helper function to playback a single trajectory using the simulator environment.
@@ -141,7 +160,12 @@ def playback_trajectory_with_env(
             if video_count % video_skip == 0:
                 video_img = []
                 for cam_name in camera_names:
-                    video_img.append(env.render(mode="rgb_array", height=512, width=512, camera_name=cam_name))
+                    box_coordinates = (50, 50, 200, 200)
+                    if modes_dense[i] < 0.5:
+                        video_img.append(mark_image_in_array(env.render(mode="rgb_array", height=512, width=512, camera_name=cam_name), box_coordinates, outline = "green"))
+                    else:
+                        video_img.append(mark_image_in_array(env.render(mode="rgb_array", height=512, width=512, camera_name=cam_name), box_coordinates))
+
                 video_img = np.concatenate(video_img, axis=1) # concatenate horizontally
                 video_writer.append_data(video_img)
             video_count += 1
@@ -156,6 +180,7 @@ def playback_trajectory_with_obs(
     video_skip=5, 
     image_names=None,
     first=False,
+    modes_dense=None
 ):
     """
     This function reads all "rgb" observations in the dataset trajectory and
@@ -171,13 +196,25 @@ def playback_trajectory_with_obs(
     """
     assert image_names is not None, "error: must specify at least one image observation to use in @image_names"
     video_count = 0
-
+    box_coordinates = (10, 10, 20, 20)
     traj_len = traj_grp["actions"].shape[0]
     for i in range(traj_len):
         if video_count % video_skip == 0:
             # concatenate image obs together
             im = [traj_grp["obs/{}".format(k)][i] for k in image_names]
+            #if modes_dense is not None:
+            #    for j in range(len(im)):
+            #        if modes_dense[i] > 0.5:
+            #            im[j] = mark_image_in_array(j, box_coordinates)
+            #        else:
+            #            im[j] = mark_image_in_array(j, box_coordinates, "green")    
             frame = np.concatenate(im, axis=1)
+            if modes_dense is not None:
+                
+                if modes_dense[i] > 0.5:
+                    frame = mark_image_in_array(frame, box_coordinates)
+                else:
+                    frame = mark_image_in_array(frame, box_coordinates, "green")    
             video_writer.append_data(frame)
         video_count += 1
 
@@ -224,6 +261,7 @@ def playback_dataset(args):
         is_robosuite_env = EnvUtils.is_robosuite_env(env_meta)
 
     f = h5py.File(args.dataset, "r")
+    f2 = h5py.File(args.md_file, "r")
 
     # list of all demonstration episodes (sorted in increasing number order)
     if args.filter_key is not None:
@@ -246,7 +284,7 @@ def playback_dataset(args):
     for ind in range(len(demos)):
         ep = demos[ind]
         print("Playing back episode: {}".format(ep))
-
+        modes_dense = f2["data/{}/modes_dense".format(ep)][()]
         if args.use_obs:
             playback_trajectory_with_obs(
                 traj_grp=f["data/{}".format(ep)], 
@@ -254,11 +292,13 @@ def playback_dataset(args):
                 video_skip=args.video_skip,
                 image_names=args.render_image_names,
                 first=args.first,
+                modes_dense = modes_dense
             )
             continue
 
         # prepare initial state to reload from
         states = f["data/{}/states".format(ep)][()]
+        #modes_dense = f2["data/{}/modes_dense".format(ep)][()]
         initial_state = dict(states=states[0])
         if is_robosuite_env:
             initial_state["model"] = f["data/{}".format(ep)].attrs["model_file"]
@@ -277,6 +317,7 @@ def playback_dataset(args):
             video_skip=args.video_skip,
             camera_names=args.render_image_names,
             first=args.first,
+            modes_dense = modes_dense
         )
 
     f.close()
@@ -341,6 +382,13 @@ if __name__ == "__main__":
         type=int,
         default=5,
         help="render frames to video every n steps",
+    )
+    parser.add_argument(
+        "--md_file",
+        type=str,
+        
+        default=None,
+        
     )
 
     # camera names to render, or image observations to use for writing to video
